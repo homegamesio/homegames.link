@@ -1,53 +1,27 @@
 const WebSocket = require('ws');
-
-const express = require('express');
-const fs = require('fs');
-const https = require('https');
 const http = require('http');
-const app = express();
-
-const privateKey = fs.readFileSync('ssl/localhost.key');
-const certificate = fs.readFileSync('ssl/localhost.crt');
-
-const ensureSecure = (req, res, next) => {
-    if (req.secure) {
-        return next();
-    }
-
-    res.redirect('https://' + req.hostname + req.url);
-}
-
-app.all('*', ensureSecure);
 
 const hostMap = {};
 
-app.get('/', (req, res) => {
-    const requesterIp = req.connection.remoteAddress;
-    console.log(requesterIp);
-    console.log(hostMap);
-    if (hostMap[requesterIp]) {
-        res.write(hostMap[requesterIp]);
-    } else {
-        res.write('none');
-    }
+const wsServer = http.createServer();
 
-    res.end();
+const hostMapServer = http.createServer((req, res) => {
+	const requesterIp = req.connection.remoteAddress;
+
+	res.writeHead(200);
+
+	if (hostMap[requesterIp]) {
+		res.writeHead(301, {'Location': 'http://' + hostMap[requesterIp]});
+		res.end();
+	} else {
+        	res.end('none');
+    	}
 });
-
-const httpServer = http.createServer(app);
-
-const server = https.createServer({
-    key: privateKey,
-    cert: certificate
-}, app);
-
-const PORT = 7000;
 
 // if this thing becomes popular, this will never work. until then, it's fine.
 let id = 0;
 
-
-const wss = new WebSocket.Server({port: PORT});
+const wss = new WebSocket.Server({server: wsServer});
 
 const clients = {};
 wss.on('connection', (ws, req) => {
@@ -66,6 +40,6 @@ wss.on('connection', (ws, req) => {
         });
 });
 
-httpServer.listen(80);
-server.listen(443);
+hostMapServer.listen(80);
+wsServer.listen(7080);
 
