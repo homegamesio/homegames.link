@@ -11,7 +11,10 @@ const hostMapServer = http.createServer((req, res) => {
 	res.writeHead(200);
 
 	if (hostMap[requesterIp]) {
-		res.writeHead(301, {'Location': 'http://' + hostMap[requesterIp]});
+		res.writeHead(307, {
+                    'Location': 'http://' + hostMap[requesterIp],
+                    'Cache-Control': 'no-store'
+                });
 		res.end();
 	} else {
         	res.end('none');
