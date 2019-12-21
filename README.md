@@ -1,6 +1,8 @@
 # homegames.link
 homegames.link
 
+![homegames.link diagram](https://d3lgoy70hwd3pc.cloudfront.net/homegames_link.png)
+
 ### General idea:
 - A Homegames instance maintains a separate optional WS connection to homegames.link. 
 - The Homegames instance tells homegames.link its local IP address. 
@@ -12,4 +14,4 @@ homegames.link
 ### Notes
 - Might not need to use WS
 - Should probably use "none" as an opportunity to market Homegames, like "no local servers found but make one it's rad and easy" or something.
-- Browser caching makes testing difficult
+- Browser caching makes life difficult
