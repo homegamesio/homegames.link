@@ -23,29 +23,26 @@ const createDNSRecord = (url, ip) => new Promise((resolve, reject) => {
         ChangeBatch: {
             Changes: [
                 {
-                    Action: "CREATE", 
+                    Action: "CREATE",
                     ResourceRecordSet: {
                         Name: url,
                         ResourceRecords: [
                             {
                                 Value: ip
                             }
-                        ], 
-                        TTL: 60, 
+                        ],
+                        TTL: 60,
                         Type: "A"
                     }
                 }
             ]
-        }, 
+        },
         HostedZoneId: config.aws.route53.HOSTED_ZONE_ID
     };
 
     const route53 = new AWS.Route53();
-    
+
     route53.changeResourceRecordSets(params, (err, data) => {
-	    console.log("changed");
-	    console.log(err);
-	    console.log(data);
 	    resolve();
     });
 });
@@ -59,12 +56,8 @@ const verifyDNSRecord = (url, ip) => new Promise((resolve, reject) => {
         StartRecordType: 'A',
 	MaxItems: '1'
     };
-    
+
     route53.listResourceRecordSets(params, (err, data) => {
-	    console.log("HUIH");
-	    console.log(data);
-	    console.log("CHECKING");
-	    console.log(url);
 	    if (data.ResourceRecordSets.length === 0 || data.ResourceRecordSets[0].Name !== url) {
 		    createDNSRecord(url, ip).then(() => {
 	    		resolve();
@@ -109,8 +102,7 @@ const hostMapServer = https.createServer(options, (req, res) => {
 	const requesterIp = req.connection.remoteAddress;
 
 	if (hostMap[requesterIp]) {
-		console.log('doing this but need dns first');
-	
+
 	    res.writeHead(307, {
                 'Location': `https://${hostMap[requesterIp].url}`,
                 'Cache-Control': 'no-store'
@@ -135,25 +127,20 @@ wss.on('connection', (ws, req) => {
         const networkIp = req.connection.remoteAddress;
 
 	ws.on('message', (_info) => {
-		console.log("GOT THIS INFO");
-		console.log(_info);
-	   
+
             const info = JSON.parse(_info);
 
 
 	    verifyAccessToken(info.username, info.accessToken).then((data) => {
-	        console.log(data);
 		    const ipSub = info.ip.replace(/\./g, '-');
 		    const userHash = getUserHash(info.username);
 		    const userUrl = `${ipSub}.${userHash}.homegames.link`;
 
 		    verifyDNSRecord(userUrl, info.ip).then(() => {
-			    console.log('verified DNS');
 		            hostMap[networkIp] = {
 				    url: userUrl
 			    };
 		    }).catch(err => {
-			console.log('coudltn veri');
 			    console.log(err);
 		    });
 	    });
@@ -161,7 +148,7 @@ wss.on('connection', (ws, req) => {
 	});
 
         ws.on('close', () => {
-            delete hostMap[networkIp]; 
+            delete hostMap[networkIp];
             delete clients[ws.id];
         });
 });
