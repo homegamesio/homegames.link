@@ -396,3 +396,10 @@ wss.on('connection', (ws, req) => {
 
 hostMapServer.listen(443);
 wsServer.listen(7080);
+
+const HTTP_PORT = 80;
+
+http.createServer((req, res) => {
+    res.writeHead(301, {'Location': 'https://' + req.headers['host'] + req.url });
+    res.end();
+}).listen(HTTP_PORT);
