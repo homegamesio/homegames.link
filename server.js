@@ -179,7 +179,19 @@ const app = (req, res) => {
 			});
 			res.end();
 		} else if (serverIds.length > 1) {
-			console.log('multiople');
+			const serverOptions = serverIds.map(serverId => {
+				const serverInfo = JSON.parse(servers[serverId]);
+
+				const prefix = serverInfo.https ? 'https': 'http';
+				return `<li><a href="${prefix}://${serverInfo.ip}"}>Server ID: ${serverId}</a></li>`
+			});
+
+			const content = `Homegames server selector: <ul>${serverOptions.join('')}</ul>`;
+			const response = `<html><body>${content}</body></html>`;
+			res.writeHead(200, {
+				'Content-Type': 'text/html'
+			});
+			res.end(response);
 		} else {
 			console.log('no servers');
 			noServers();
