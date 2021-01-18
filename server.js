@@ -144,10 +144,10 @@ const redisHmset = (key, obj) => new Promise((resolve, reject) => {
 	});
 });
 
-const getHostInfo = (ip) => new Promise((resolve, reject) => {
+const getHostInfo = (publicIp, serverId) => new Promise((resolve, reject) => {
 	const client = redisClient();
 
-	client.hmget(publicIp, [hostIp], (err, data) => {
+	client.hmget(publicIp, [serverId], (err, data) => {
 		if (err || !data) {
 			reject(err || 'No host data found');
 		} else {
@@ -283,7 +283,9 @@ const registerHost = (publicIp, info, hostId) => new Promise((resolve, reject) =
 	const client = redisClient();
 
 	const doUpdate = () => {
-		client.hmset(publicIp, [hostId, JSON.stringify(info)], (err, data) => {
+		const payload = Object.assign({}, info);
+		payload.timestamp = Date.now();
+		client.hmset(publicIp, [hostId, JSON.stringify(payload)], (err, data) => {
 			if (err) {
 				reject(err);
 			} else {
@@ -298,7 +300,7 @@ const registerHost = (publicIp, info, hostId) => new Promise((resolve, reject) =
 		for (serverId in data) {
 			const serverInfo = JSON.parse(data[serverId]);
 
-			if (serverInfo.ip === info.ip) {
+			if (serverInfo.ip === info.ip || !info.timestamp || info.timestamp + (5 * 1000 * 60) <= Date.now()) {
 				idsToRemove.push(serverId);
 			}
 		}
@@ -327,6 +329,14 @@ const generateSocketId = () => {
 	return uuidv4();
 };
 
+const updatePresence = (publicIp, serverId) => {
+	getHostInfo(publicIp, serverId).then(hostInfo => {
+		registerHost(publicIp, JSON.parse(hostInfo), serverId).then(() => {
+			console.log('updated presence');
+		});
+	});
+};
+
 wss.on('connection', (ws, req) => {
 	const socketId = generateSocketId();
 	ws.id = generateSocketId();
@@ -339,7 +349,9 @@ wss.on('connection', (ws, req) => {
 		try {
             		const message = JSON.parse(_message);
 
-	    		if (message.ip) {
+			if (message.type === 'heartbeat') {
+				updatePresence(publicIp, ws.id);
+			} else if (message.ip) {
 				registerHost(publicIp, message, ws.id).then(() => {
 					console.log('registered host');
 				});
