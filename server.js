@@ -151,7 +151,7 @@ const getHostInfo = (publicIp, serverId) => new Promise((resolve, reject) => {
 		if (err || !data) {
 			reject(err || 'No host data found');
 		} else {
-			resolve(data);
+			resolve(data[0]);
 		}
 	});
 
@@ -168,13 +168,14 @@ const app = (req, res) => {
 	};
 
 	getHomegamesServers(requesterIp).then(servers => {
-		const serverIds = Object.keys(servers);
+		const serverIds = servers && Object.keys(servers) || [];
 		if (serverIds.length === 1) {
-			const serverInfo = JSON.parse(Object.values(servers)[0]);
+			const serverInfo = JSON.parse(servers[serverIds[0]]);
 			const hasHttps = serverInfo.https;
 			const prefix = hasHttps ? 'https' : 'http';
+			const urlOrIp = serverInfo.verifiedUrl || serverInfo.localIp;
 			res.writeHead(307, {
-				'Location': `${prefix}://${serverInfo.ip}`,
+				'Location': `${prefix}://${urlOrIp}`,
 				'Cache-Control': 'no-store'
 			});
 			res.end();
@@ -337,6 +338,15 @@ const updatePresence = (publicIp, serverId) => {
 	});
 };
 
+const updateHostInfo = (publicIp, serverId, update) => new Promise((resolve, reject) => {
+	getHostInfo(publicIp, serverId).then(hostInfo => {
+		const newInfo = Object.assign(JSON.parse(hostInfo), update);
+		registerHost(publicIp, newInfo, serverId).then(() => {
+			console.log('updated data');
+		});
+	});
+});
+
 wss.on('connection', (ws, req) => {
 	const socketId = generateSocketId();
 	ws.id = generateSocketId();
@@ -351,11 +361,25 @@ wss.on('connection', (ws, req) => {
 
 			if (message.type === 'heartbeat') {
 				updatePresence(publicIp, ws.id);
-			} else if (message.ip) {
-				registerHost(publicIp, message, ws.id).then(() => {
+			} else if (message.type === 'register') {
+				registerHost(publicIp, message.data, ws.id).then(() => {
 					console.log('registered host');
 				});
-	    		} else {
+	    		} else if (message.type === 'verify-dns') {
+				verifyAccessToken(message.username, message.accessToken).then(() => {
+		    			const ipSub = message.localIp.replace(/\./g, '-');
+					const userHash = getUserHash(message.username);
+		    			const userUrl = `${ipSub}.${userHash}.homegames.link`;
+					verifyDNSRecord(userUrl, message.localIp).then(() => {
+						ws.send(JSON.stringify({
+							msgId: message.msgId,
+							url: userUrl,
+							success: true
+						}));
+						updateHostInfo(publicIp, ws.id, {verifiedUrl: userUrl});
+					});
+				});
+			} else {
 	    		    console.log("received message without ip");
 	    		    console.log(message);
 	    		}
