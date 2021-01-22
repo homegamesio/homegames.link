@@ -184,7 +184,9 @@ const app = (req, res) => {
 				const serverInfo = JSON.parse(servers[serverId]);
 
 				const prefix = serverInfo.https ? 'https': 'http';
-				return `<li><a href="${prefix}://${serverInfo.ip}"}>Server ID: ${serverId}</a></li>`
+				const urlOrIp = serverInfo.verifiedUrl || serverInfo.localIp;
+				const lastHeartbeat = new Date(Number(serverInfo.timestamp));
+				return `<li><a href="${prefix}://${urlOrIp}"}>Server ID: ${serverId} (Last heartbeat: ${lastHeartbeat})</a></li>`
 			});
 
 			const content = `Homegames server selector: <ul>${serverOptions.join('')}</ul>`;
@@ -205,39 +207,6 @@ const app = (req, res) => {
 };
 
 const hostMapServer = https.createServer(options, app);
-//(req, res) => {
-//	const requesterIp = req.connection.remoteAddress;
-//
-//	console.log("GOT IP");
-//	console.log(requesterIp);
-//
-//	console.log("THINGS");
-//
-//	const redisClient = redis.createClient();
-//
-//	redisClient.set("testkey", "testvalue", (err, res) => {
-//		console.log("yooooo");
-//		console.log(err);
-//		console.log(res);
-//		redisClient.get("testkey", (err, res) => {
-//			console.log(err);
-//			console.log(res);
-//		});
-//	});
-//
-//
-////	if (hostMap[requesterIp]) {
-////	
-////	    res.writeHead(307, {
-////                'Location': `https://${hostMap[requesterIp].url}`,
-////                'Cache-Control': 'no-store'
-////            });
-////            res.end();
-////	} else {
-////		res.writeHead(200);
-////        	res.end('none');
-////    	}
-//});
 
 const wss = new WebSocket.Server({server: wsServer});
 
@@ -300,8 +269,7 @@ const registerHost = (publicIp, info, hostId) => new Promise((resolve, reject) =
 		const idsToRemove = [];
 		for (serverId in data) {
 			const serverInfo = JSON.parse(data[serverId]);
-
-			if (serverInfo.ip === info.ip || !info.timestamp || info.timestamp + (5 * 1000 * 60) <= Date.now()) {
+			if (serverInfo.localIp && serverInfo.localIp === info.localIp || !serverInfo.timestamp || serverInfo.timestamp + (5 * 1000 * 60) <= Date.now()) {
 				idsToRemove.push(serverId);
 			}
 		}
@@ -332,6 +300,9 @@ const generateSocketId = () => {
 
 const updatePresence = (publicIp, serverId) => {
 	getHostInfo(publicIp, serverId).then(hostInfo => {
+		if (!hostInfo) {
+			return;
+		}
 		registerHost(publicIp, JSON.parse(hostInfo), serverId).then(() => {
 			console.log('updated presence');
 		});
@@ -388,25 +359,6 @@ wss.on('connection', (ws, req) => {
 			console.error(err);
 		}
 
-
-//	    verifyAccessToken(info.username, info.accessToken).then((data) => {
-//		    const ipSub = info.ip.replace(/\./g, '-');
-//		    const userHash = getUserHash(info.username);
-//		    const userUrl = `${ipSub}.${userHash}.homegames.link`;
-//
-//		    console.log("HELLOG GOO");
-//		    console.log(userUrl);
-//		    console.log(info.ip);
-//
-//		    verifyDNSRecord(userUrl, info.ip).then(() => {
-//		            hostMap[networkIp] = {
-//				    url: userUrl
-//			    };
-//		    }).catch(err => {
-//			    console.log(err);
-//		    });
-//	    });
-
 	});
 
         ws.on('close', () => {
@@ -415,18 +367,6 @@ wss.on('connection', (ws, req) => {
 		deleteHostInfo(publicIp, ws.id).then(() => {
 			console.log('deleetedede');
 		});
-//	    getHostInfo(publicIp).then(_hostInfo => {
-//		console.log('host info of person who just closed');
-//		console.log(_hostInfo);
-//		if (_hostInfo) {
-//			const hostInfo = JSON.parse(_hostInfo);
-//			deleteHostInfo(publicIp, hostInfo.ip).then(() => {
-//				console.log("deleted host info");
-//			});
-//		}
-//	    });
-	    //deleteHostInfo(hostIp, 
-            //delete hostMap[networkIp]; 
         });
 });
 
