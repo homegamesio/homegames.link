@@ -61,6 +61,9 @@ const verifyDNSRecord = (url, ip) => new Promise((resolve, reject) => {
 });
 
 const redisClient = () => {
+    console.log("REDIS CLIENT WITHJ");
+    console.log(process.env.REDIS_HOST);
+    console.log(process.env.REDIS_PORT);
 	return redis.createClient({
 		host: process.env.REDIS_HOST,
 		port: process.env.REDIS_PORT
@@ -333,6 +336,6 @@ wss.on('connection', (ws, req) => {
 });
 
 hostMapServer.listen(80);
-wsServer.listen(7080);
+wsServer.listen(80);
 
 const HTTP_PORT = 80;
