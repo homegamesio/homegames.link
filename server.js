@@ -127,6 +127,7 @@ const app = (req, res) => {
 		});
 		res.end('No Homegames servers found. Contact support@homegames.io for help');
 	};
+        console.log(requesterIp);
         noServers();
 
 	getHomegamesServers(requesterIp).then(servers => {
