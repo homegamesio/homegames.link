@@ -119,6 +119,7 @@ const getHostInfo = (publicIp, serverId) => new Promise((resolve, reject) => {
 
 const app = (req, res) => {
 	const requesterIp = req.connection.remoteAddress;
+        
 
 	const noServers = () => {
 		res.writeHead(200, {
@@ -126,6 +127,7 @@ const app = (req, res) => {
 		});
 		res.end('No Homegames servers found. Contact support@homegames.io for help');
 	};
+        noServers();
 
 	getHomegamesServers(requesterIp).then(servers => {
 		const serverIds = servers && Object.keys(servers) || [];
