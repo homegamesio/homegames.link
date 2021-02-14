@@ -1,11 +1,11 @@
-//const WebSocket = require('ws');
+const WebSocket = require('ws');
 const http = require('http');
 const process = require('process');
-//const path = require('path');
-//const { getUserHash, verifyAccessToken } = require('homegames-common');
-//const AWS = require('aws-sdk');
+const path = require('path');
+const { getUserHash, verifyAccessToken } = require('homegames-common');
+const AWS = require('aws-sdk');
 const redis = require('redis');
-//const { v4: uuidv4 } = require('uuid');
+const { v4: uuidv4 } = require('uuid');
 
 //const wsServer = http.createServer();
 //
