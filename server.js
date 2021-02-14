@@ -61,12 +61,12 @@ const process = require('process');
 //    });
 //});
 //
-//const redisClient = () => {
-//	return redis.createClient({
-//		host: process.env.REDIS_HOST,
-//		port: process.env.REDIS_PORT
-//	});
-//};
+const redisClient = () => {
+	return redis.createClient({
+		host: process.env.REDIS_HOST,
+		port: process.env.REDIS_PORT
+	});
+};
 //
 //const redisGet = (key) => new Promise((resolve, reject) => {
 //	const client = redisClient();
@@ -173,8 +173,10 @@ const process = require('process');
 const hostMapServer = http.createServer((req, res) => {
 //		host: process.env.REDIS_HOST,
 //		port: process.env.REDIS_PORT
-/
-    res.end('ok ' + process.env.REDIS_HOST + ' : ' + process.env.REDIS_PORT);
+
+    const client = redisClient();
+    console.log(client);
+    res.end('ok!! ' + process.env.REDIS_HOST + ' : ' + process.env.REDIS_PORT);
 });
 
 //const wss = new WebSocket.Server({server: wsServer});
