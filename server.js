@@ -62,7 +62,6 @@ const redisClient = () => new Promise((resolve, reject) => {
     setTimeout(() => {
         reject('Redis connection timed out');
     }, 5000);
-    setTimeout(() => {
 	const client = redis.createClient({
 		host: process.env.REDIS_HOST,
 		port: process.env.REDIS_PORT
@@ -71,7 +70,6 @@ const redisClient = () => new Promise((resolve, reject) => {
         }).on('ready', () => {
             resolve(client);
         });
-    }, 6000);
 });
 
 const redisGet = (key) => new Promise((resolve, reject) => {
