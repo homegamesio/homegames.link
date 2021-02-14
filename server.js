@@ -4,7 +4,7 @@ const process = require('process');
 //const path = require('path');
 //const { getUserHash, verifyAccessToken } = require('homegames-common');
 //const AWS = require('aws-sdk');
-//const redis = require('redis');
+const redis = require('redis');
 //const { v4: uuidv4 } = require('uuid');
 
 //const wsServer = http.createServer();
