@@ -64,8 +64,8 @@ const redisClient = () => new Promise((resolve, reject) => {
     }, 5000);
     setTimeout(() => {
 	const client = redis.createClient({
-		host: null,//'54.148.27.171',//process.env.REDIS_HOST,
-		port: 6379//process.env.REDIS_PORT
+		host: process.env.REDIS_HOST,
+		port: process.env.REDIS_PORT
 	}).on('error', (err) => {
             reject(err);
         }).on('ready', () => {
