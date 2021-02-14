@@ -169,6 +169,7 @@ const app = (req, res) => {
 
 const hostMapServer = http.createServer((req, res) => {
     const client = redisClient();
+    console.log('doing this');
     res.end('ok!1211! ' + process.env.REDIS_HOST + ' : ' + process.env.REDIS_PORT);
 });
 
