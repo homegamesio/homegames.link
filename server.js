@@ -58,12 +58,16 @@ const verifyDNSRecord = (url, ip) => new Promise((resolve, reject) => {
     });
 });
 
-const redisClient = () => {
-	return redis.createClient({
+const redisClient = () => new Promise((resolve, reject) => {
+	const client = redis.createClient({
 		host: process.env.REDIS_HOST,
 		port: process.env.REDIS_PORT
-	});
-};
+	}).on('error', (err) => {
+            reject(err);
+        }).on('ready', () => {
+            resolve(client);
+        });
+});
 
 const redisGet = (key) => new Promise((resolve, reject) => {
 	const client = redisClient();
@@ -168,9 +172,22 @@ const app = (req, res) => {
 };
 
 const hostMapServer = http.createServer((req, res) => {
-//    const client = redisClient();
-    console.log('doing this again');
-    res.end('ok!1211! ' + process.env.REDIS_HOST + ' : ' + process.env.REDIS_PORT);
+    let client;
+    console.log('helloff');
+    redisClient().then(client => {
+        console.log('cccccc');
+        client.get("test", (err, data) => {
+            if (!err) {
+                res.end('hooooooo it works ' + data);
+            } else {
+                console.log(err);
+                res.end('ok!1211! thats problematic');
+            }
+        });
+    }).catch(err => {
+        console.log('doing this again again');
+        res.end('could not connect to redis');
+    });
 });
 
 const wss = new WebSocket.Server({server: hostMapServer });
