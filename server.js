@@ -1,5 +1,6 @@
 //const WebSocket = require('ws');
 const http = require('http');
+const process = require('process');
 //const path = require('path');
 //const { getUserHash, verifyAccessToken } = require('homegames-common');
 //const AWS = require('aws-sdk');
@@ -170,7 +171,10 @@ const http = require('http');
 //};
 
 const hostMapServer = http.createServer((req, res) => {
-    res.end('ok');
+//		host: process.env.REDIS_HOST,
+//		port: process.env.REDIS_PORT
+/
+    res.end('ok ' + process.env.REDIS_HOST + ' : ' + process.env.REDIS_PORT);
 });
 
 //const wss = new WebSocket.Server({server: wsServer});
