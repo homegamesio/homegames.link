@@ -7,60 +7,60 @@ const AWS = require('aws-sdk');
 const redis = require('redis');
 const { v4: uuidv4 } = require('uuid');
 
-//const wsServer = http.createServer();
+const wsServer = http.createServer();
 //
 //
-//// todo: move to common
-//const createDNSRecord = (url, ip) => new Promise((resolve, reject) => {
-//    const params = {
-//        ChangeBatch: {
-//            Changes: [
-//                {
-//                    Action: "CREATE", 
-//                    ResourceRecordSet: {
-//                        Name: url,
-//                        ResourceRecords: [
-//                            {
-//                                Value: ip
-//                            }
-//                        ], 
-//                        TTL: 60, 
-//                        Type: "A"
-//                    }
-//                }
-//            ]
-//        }, 
-//        HostedZoneId: process.env.AWS_ROUTE_53_HOSTED_ZONE_ID
-//    };
-//
-//    const route53 = new AWS.Route53();
-//    
-//    route53.changeResourceRecordSets(params, (err, data) => {
-//	    resolve();
-//    });
-//});
-//
-//const verifyDNSRecord = (url, ip) => new Promise((resolve, reject) => {
-//    const route53 = new AWS.Route53();
-//
-//    const params = {
-//        HostedZoneId: process.env.AWS_ROUTE_53_HOSTED_ZONE_ID,
-//        StartRecordName: url,
-//        StartRecordType: 'A',
-//	MaxItems: '1'
-//    };
-//    
-//    route53.listResourceRecordSets(params, (err, data) => {
-//	    if (data.ResourceRecordSets.length === 0 || data.ResourceRecordSets[0].Name !== url) {
-//		    createDNSRecord(url, ip).then(() => {
-//	    		resolve();
-//		    });
-//	    } else {
-//	    	resolve();
-//	    }
-//    });
-//});
-//
+// todo: move to common
+const createDNSRecord = (url, ip) => new Promise((resolve, reject) => {
+    const params = {
+        ChangeBatch: {
+            Changes: [
+                {
+                    Action: "CREATE", 
+                    ResourceRecordSet: {
+                        Name: url,
+                        ResourceRecords: [
+                            {
+                                Value: ip
+                            }
+                        ], 
+                        TTL: 60, 
+                        Type: "A"
+                    }
+                }
+            ]
+        }, 
+        HostedZoneId: process.env.AWS_ROUTE_53_HOSTED_ZONE_ID
+    };
+
+    const route53 = new AWS.Route53();
+    
+    route53.changeResourceRecordSets(params, (err, data) => {
+	    resolve();
+    });
+});
+
+const verifyDNSRecord = (url, ip) => new Promise((resolve, reject) => {
+    const route53 = new AWS.Route53();
+
+    const params = {
+        HostedZoneId: process.env.AWS_ROUTE_53_HOSTED_ZONE_ID,
+        StartRecordName: url,
+        StartRecordType: 'A',
+	MaxItems: '1'
+    };
+    
+    route53.listResourceRecordSets(params, (err, data) => {
+	    if (data.ResourceRecordSets.length === 0 || data.ResourceRecordSets[0].Name !== url) {
+		    createDNSRecord(url, ip).then(() => {
+	    		resolve();
+		    });
+	    } else {
+	    	resolve();
+	    }
+    });
+});
+
 const redisClient = () => {
 	return redis.createClient({
 		host: process.env.REDIS_HOST,
