@@ -59,14 +59,19 @@ const verifyDNSRecord = (url, ip) => new Promise((resolve, reject) => {
 });
 
 const redisClient = () => new Promise((resolve, reject) => {
+    setTimeout(() => {
+        reject('Redis connection timed out');
+    }, 5000);
+    setTimeout(() => {
 	const client = redis.createClient({
-		host: process.env.REDIS_HOST,
-		port: process.env.REDIS_PORT
+		host: null,//'54.148.27.171',//process.env.REDIS_HOST,
+		port: 6379//process.env.REDIS_PORT
 	}).on('error', (err) => {
             reject(err);
         }).on('ready', () => {
             resolve(client);
         });
+    }, 6000);
 });
 
 const redisGet = (key) => new Promise((resolve, reject) => {
