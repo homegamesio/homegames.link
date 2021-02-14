@@ -1,10 +1,10 @@
-const WebSocket = require('ws');
+//const WebSocket = require('ws');
 const http = require('http');
-const path = require('path');
-const { getUserHash, verifyAccessToken } = require('homegames-common');
-const AWS = require('aws-sdk');
-const redis = require('redis');
-const { v4: uuidv4 } = require('uuid');
+//const path = require('path');
+//const { getUserHash, verifyAccessToken } = require('homegames-common');
+//const AWS = require('aws-sdk');
+//const redis = require('redis');
+//const { v4: uuidv4 } = require('uuid');
 
 //const wsServer = http.createServer();
 //
@@ -169,7 +169,9 @@ const app = (req, res) => {
 	});
 };
 
-const hostMapServer = http.createServer(app);
+const hostMapServer = http.createServer((req, res) => {
+    res.end('ok');
+});
 
 //const wss = new WebSocket.Server({server: wsServer});
 //
