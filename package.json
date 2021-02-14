@@ -22,6 +22,7 @@
   },
   "homepage": "https://github.com/prosif/homegames.link#readme",
   "dependencies": {
+    "aws-sdk": "^2.843.0",
     "homegames-common": "^0.1.34",
     "redis": "^3.0.2",
     "uuid": "^8.3.2",
