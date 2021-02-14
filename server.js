@@ -125,7 +125,7 @@ const app = (req, res) => {
 		res.writeHead(200, {
 			'Content-Type': 'text/plain'
 		});
-		res.end('No Homegames servers found. Contact support@homegames.io for help');
+		res.end('No Homegames servers found. Contact support@homegames.io for help ' + requesterIp);
 	};
         console.log(requesterIp);
         noServers();
