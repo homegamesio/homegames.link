@@ -1,22 +1,12 @@
 const WebSocket = require('ws');
-const config = require('./config');
 const http = require('http');
-const https = require('https');
-const fs = require('fs');
 const path = require('path');
 const { getUserHash, verifyAccessToken } = require('homegames-common');
 const AWS = require('aws-sdk');
 const redis = require('redis');
 const { v4: uuidv4 } = require('uuid');
 
-const hostMap = {};
-
-const options = {
-    key: fs.readFileSync(config.SSL_KEY_PATH),
-    cert: fs.readFileSync(config.SSL_CERT_PATH)
-};
-
-const wsServer = https.createServer(options);
+const wsServer = http.createServer();
 
 
 // todo: move to common
@@ -39,7 +29,7 @@ const createDNSRecord = (url, ip) => new Promise((resolve, reject) => {
                 }
             ]
         }, 
-        HostedZoneId: config.aws.route53.HOSTED_ZONE_ID
+        HostedZoneId: process.env.AWS_ROUTE_53_HOSTED_ZONE_ID
     };
 
     const route53 = new AWS.Route53();
@@ -53,7 +43,7 @@ const verifyDNSRecord = (url, ip) => new Promise((resolve, reject) => {
     const route53 = new AWS.Route53();
 
     const params = {
-        HostedZoneId: config.aws.route53.HOSTED_ZONE_ID,
+        HostedZoneId: process.env.AWS_ROUTE_53_HOSTED_ZONE_ID,
         StartRecordName: url,
         StartRecordType: 'A',
 	MaxItems: '1'
@@ -70,40 +60,10 @@ const verifyDNSRecord = (url, ip) => new Promise((resolve, reject) => {
     });
 });
 
-const COGNITO_POOL_DATA = {
-    UserPoolId: config.aws.cognito.USER_POOL_ID,
-    ClientId: config.aws.cognito.CLIENT_ID
-};
-
-const getAccessToken = (username, password) => new Promise((resolve, reject) => {
-    const params = new Cognito.AuthenticationDetails({
-	Username: username,
-	Password: password
-    });
-
-    const userPool = new Cognito.CognitoUserPool(COGNITO_POOL_DATA);
-
-    const userData = {
-        Username: username,
-	Pool: userPool
-    };
-
-    const user = new Cognito.CognitoUser(userData);
-
-    user.authenticateUser(params, {
-        onSuccess: (result) => {
-            resolve(result.getAccessToken().getJwtToken());
-	},
-	onFailure: (err) => {
-            reject(err);
-	}
-    });
-});
-
 const redisClient = () => {
 	return redis.createClient({
-		host: config.REDIS_HOST,
-		port: config.REDIS_PORT
+		host: process.env.REDIS_HOST,
+		port: process.env.REDIS_PORT
 	});
 };
 
@@ -206,7 +166,7 @@ const app = (req, res) => {
 	});
 };
 
-const hostMapServer = https.createServer(options, app);
+const hostMapServer = http.createServer(app);
 
 const wss = new WebSocket.Server({server: wsServer});
 
@@ -370,12 +330,7 @@ wss.on('connection', (ws, req) => {
         });
 });
 
-hostMapServer.listen(443);
+hostMapServer.listen(80);
 wsServer.listen(7080);
 
 const HTTP_PORT = 80;
-
-http.createServer((req, res) => {
-    res.writeHead(301, {'Location': 'https://' + req.headers['host'] + req.url });
-    res.end();
-}).listen(HTTP_PORT);
