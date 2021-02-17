@@ -174,24 +174,24 @@ const app = (req, res) => {
 	});
 };
 
-const hostMapServer = http.createServer((req, res) => {
-    let client;
-    console.log('helloffaa');
-    redisClient().then(client => {
-        console.log('cccccc');
-        client.get("test", (err, data) => {
-            if (!err) {
-                res.end('hooooooo it really works ' + data);
-            } else {
-                console.log(err);
-                res.end('ok!1211! thats problematic');
-            }
-        });
-    }).catch(err => {
-        console.log('doing this again again');
-        res.end('could not connect to redis');
-    });
-});
+const hostMapServer = http.createServer(app);
+//    let client;
+//    console.log('helloffaa');
+//    redisClient().then(client => {
+//        console.log('cccccc');
+//        client.get("test", (err, data) => {
+//            if (!err) {
+//                res.end('hooooooo it really works ' + data);
+//            } else {
+//                console.log(err);
+//                res.end('ok!1211! thats problematic');
+//            }
+//        });
+//    }).catch(err => {
+//        console.log('doing this again again');
+//        res.end('could not connect to redis');
+//    });
+//});
 
 const wss = new WebSocket.Server({ server: hostMapServer });
 
