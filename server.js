@@ -193,7 +193,7 @@ const hostMapServer = http.createServer((req, res) => {
     });
 });
 
-const wss = new WebSocket.Server({server: hostMapServer });
+const wss = new WebSocket.Server({ server: hostMapServer });
 
 const clients = {};
 
@@ -304,6 +304,7 @@ const updateHostInfo = (publicIp, serverId, update) => new Promise((resolve, rej
 });
 
 wss.on('connection', (ws, req) => {
+    console.log('GOT A FUCKIN CONNECTION m8');
 	const socketId = generateSocketId();
 	ws.id = generateSocketId();
 	clients[ws.id] = ws;
