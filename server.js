@@ -125,17 +125,27 @@ const getHostInfo = (publicIp, serverId) => new Promise((resolve, reject) => {
 const app = (req, res) => {
 //	const requesterIp = req.connection.remoteAddress; 
 
-        console.log('plssss');
-        console.log(req);
-        const reqThing = JSON.stringify(req);
+        const { headers } = req;
+
 	const noServers = () => {
 		res.writeHead(200, {
 			'Content-Type': 'text/plain'
 		});
-		res.end('No Homegames servers found. Contact support@homegames.io for help hello 2 ' + reqThing);// + requesterIp + ' ' + process.env.REDIS_HOST + ':' + process.end.REDIS_PORT);
+		res.end('No Homegames servers found. Contact support@homegames.io for help');// + requesterIp + ' ' + process.env.REDIS_HOST + ':' + process.end.REDIS_PORT);
 	};
 //        console.log(requesterIp);
-        noServers();
+        if (!headers) {
+            noServers();
+        } else {
+            res.writeHead(200, {
+	        'Content-Type': 'text/plain'
+	    });
+
+            const requesterIp = headers['x-forwarded-for'];
+
+	    res.end('No Homegames servers found. Contact support@homegames.io for help hello 2 ' +  requesterIp);// + requesterIp + ' ' + process.env.REDIS_HOST + ':' + process.end.REDIS_PORT);
+    
+        }
 
 //	getHomegamesServers(requesterIp).then(servers => {
 //		const serverIds = servers && Object.keys(servers) || [];
