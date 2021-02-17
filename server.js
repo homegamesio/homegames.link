@@ -176,7 +176,7 @@ const app = (req, res) => {
 
 const hostMapServer = http.createServer((req, res) => {
     let client;
-    console.log('helloff');
+    console.log('helloffaa');
     redisClient().then(client => {
         console.log('cccccc');
         client.get("test", (err, data) => {
