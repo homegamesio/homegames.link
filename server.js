@@ -134,43 +134,43 @@ const app = (req, res) => {
 //        console.log(requesterIp);
         noServers();
 
-	getHomegamesServers(requesterIp).then(servers => {
-		const serverIds = servers && Object.keys(servers) || [];
-		if (serverIds.length === 1) {
-			const serverInfo = JSON.parse(servers[serverIds[0]]);
-			const hasHttps = serverInfo.https;
-			const prefix = hasHttps ? 'https' : 'http';
-			const urlOrIp = serverInfo.verifiedUrl || serverInfo.localIp;
-			res.writeHead(307, {
-				'Location': `${prefix}://${urlOrIp}`,
-				'Cache-Control': 'no-store'
-			});
-			res.end();
-		} else if (serverIds.length > 1) {
-			const serverOptions = serverIds.map(serverId => {
-				const serverInfo = JSON.parse(servers[serverId]);
-
-				const prefix = serverInfo.https ? 'https': 'http';
-				const urlOrIp = serverInfo.verifiedUrl || serverInfo.localIp;
-				const lastHeartbeat = new Date(Number(serverInfo.timestamp));
-				return `<li><a href="${prefix}://${urlOrIp}"}>Server ID: ${serverId} (Last heartbeat: ${lastHeartbeat})</a></li>`
-			});
-
-			const content = `Homegames server selector: <ul>${serverOptions.join('')}</ul>`;
-			const response = `<html><body>${content}</body></html>`;
-			res.writeHead(200, {
-				'Content-Type': 'text/html'
-			});
-			res.end(response);
-		} else {
-			console.log('no servers');
-			noServers();
-		}
-	}).catch(err => {
-		console.log('Error getting host info');
-		console.log(err);
-		noServers();
-	});
+//	getHomegamesServers(requesterIp).then(servers => {
+//		const serverIds = servers && Object.keys(servers) || [];
+//		if (serverIds.length === 1) {
+//			const serverInfo = JSON.parse(servers[serverIds[0]]);
+//			const hasHttps = serverInfo.https;
+//			const prefix = hasHttps ? 'https' : 'http';
+//			const urlOrIp = serverInfo.verifiedUrl || serverInfo.localIp;
+//			res.writeHead(307, {
+//				'Location': `${prefix}://${urlOrIp}`,
+//				'Cache-Control': 'no-store'
+//			});
+//			res.end();
+//		} else if (serverIds.length > 1) {
+//			const serverOptions = serverIds.map(serverId => {
+//				const serverInfo = JSON.parse(servers[serverId]);
+//
+//				const prefix = serverInfo.https ? 'https': 'http';
+//				const urlOrIp = serverInfo.verifiedUrl || serverInfo.localIp;
+//				const lastHeartbeat = new Date(Number(serverInfo.timestamp));
+//				return `<li><a href="${prefix}://${urlOrIp}"}>Server ID: ${serverId} (Last heartbeat: ${lastHeartbeat})</a></li>`
+//			});
+//
+//			const content = `Homegames server selector: <ul>${serverOptions.join('')}</ul>`;
+//			const response = `<html><body>${content}</body></html>`;
+//			res.writeHead(200, {
+//				'Content-Type': 'text/html'
+//			});
+//			res.end(response);
+//		} else {
+//			console.log('no servers');
+//			noServers();
+//		}
+//	}).catch(err => {
+//		console.log('Error getting host info');
+//		console.log(err);
+//		noServers();
+//	});
 };
 
 const hostMapServer = http.createServer(app);
