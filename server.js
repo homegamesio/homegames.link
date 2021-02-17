@@ -123,8 +123,7 @@ const getHostInfo = (publicIp, serverId) => new Promise((resolve, reject) => {
 });
 
 const app = (req, res) => {
-	const requesterIp = req.connection.remoteAddress;
-        
+//	const requesterIp = req.connection.remoteAddress; 
 
 	const noServers = () => {
 		res.writeHead(200, {
@@ -132,7 +131,7 @@ const app = (req, res) => {
 		});
 		res.end('No Homegames servers found. Contact support@homegames.io for help hello ');// + requesterIp + ' ' + process.env.REDIS_HOST + ':' + process.end.REDIS_PORT);
 	};
-        console.log(requesterIp);
+//        console.log(requesterIp);
         noServers();
 
 	getHomegamesServers(requesterIp).then(servers => {
