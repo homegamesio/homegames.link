@@ -127,11 +127,12 @@ const app = (req, res) => {
 
         console.log('plssss');
         console.log(req);
+        const reqThing = JSON.stringify(req);
 	const noServers = () => {
 		res.writeHead(200, {
 			'Content-Type': 'text/plain'
 		});
-		res.end('No Homegames servers found. Contact support@homegames.io for help hello 2');// + requesterIp + ' ' + process.env.REDIS_HOST + ':' + process.end.REDIS_PORT);
+		res.end('No Homegames servers found. Contact support@homegames.io for help hello 2 ' + reqThing);// + requesterIp + ' ' + process.env.REDIS_HOST + ':' + process.end.REDIS_PORT);
 	};
 //        console.log(requesterIp);
         noServers();
