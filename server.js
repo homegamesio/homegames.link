@@ -181,7 +181,7 @@ const hostMapServer = http.createServer((req, res) => {
         console.log('cccccc');
         client.get("test", (err, data) => {
             if (!err) {
-                res.end('hooooooo it works ' + data);
+                res.end('hooooooo it really works ' + data);
             } else {
                 console.log(err);
                 res.end('ok!1211! thats problematic');
