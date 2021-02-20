@@ -316,7 +316,7 @@ const logFailure = (funcName) => {
 };
 
 wss.on('connection', (ws, req) => {
-        const publicIp = headers['x-forwarded-for'] || req.connection.remoteAddress;
+        const publicIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
 
         if (!publicIp) {
             console.log(`No public IP found for websocket connection.`)
