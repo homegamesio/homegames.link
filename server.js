@@ -143,7 +143,7 @@ const app = (req, res) => {
 
             const requesterIp = headers['x-forwarded-for'];
 
-	    res.end('No Homegames servers found. Contact support@homegames.io for help hello 2 ' +  requesterIp);// + requesterIp + ' ' + process.env.REDIS_HOST + ':' + process.end.REDIS_PORT);
+	    res.end('No Homegames servers found. Contact support@homegames.io for help hello 3 ' +  requesterIp);// + requesterIp + ' ' + process.env.REDIS_HOST + ':' + process.end.REDIS_PORT);
     
         }
 
