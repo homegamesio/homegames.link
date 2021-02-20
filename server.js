@@ -48,13 +48,19 @@ const verifyDNSRecord = (url, ip) => new Promise((resolve, reject) => {
     };
     
     route53.listResourceRecordSets(params, (err, data) => {
-	    if (data.ResourceRecordSets.length === 0 || data.ResourceRecordSets[0].Name !== url) {
-		    createDNSRecord(url, ip).then(() => {
-	    		resolve();
-		    });
-	    } else {
-	    	resolve();
-	    }
+            if (err) {
+                console.log("error");
+                console.error(err);
+                reject();
+            } else {
+	        if (data.ResourceRecordSets.length === 0 || data.ResourceRecordSets[0].Name !== url) {
+	                createDNSRecord(url, ip).then(() => {
+	        		resolve();
+	                });
+	        } else {
+	        	resolve();
+	        }
+            }
     });
 });
 
@@ -353,7 +359,7 @@ wss.on('connection', (ws, req) => {
 							success: true
 						}));
 						updateHostInfo(publicIp, ws.id, {verifiedUrl: userUrl}).then(logSuccess('upateHostInfo')).catch(logFailure('updateHostInfo'));
-					});
+					}).catch(logFailure('verifyDNSRecord'));
 				});
 			} else {
 	    		    console.log("received message without ip");
