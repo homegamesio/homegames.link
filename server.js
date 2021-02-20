@@ -73,52 +73,52 @@ const redisClient = () => new Promise((resolve, reject) => {
 });
 
 const redisGet = (key) => new Promise((resolve, reject) => {
-	const client = redisClient();
-
-	client.get(key, (err, res) => {
-		if (err) {
-			reject(err);
-		} else {
-			resolve(res);
-		}
-	});
+	redisClient().then(client => {
+	    client.get(key, (err, res) => {
+	    	if (err) {
+	    		reject(err);
+	    	} else {
+	    		resolve(res);
+	    	}
+	    });
+        });
 });
 
 const redisSet = (key, value) => new Promise((resolve, reject) => {	
-	const client = redisClient();
-
-	client.set(key, value, (err, res) => {
-		if (err) {
-			reject(err);
-		} else {
-			resolve(res);
-		}
-	});
+	redisClient().then(client => {
+	    client.set(key, value, (err, res) => {
+	    	if (err) {
+	    		reject(err);
+	    	} else {
+	    		resolve(res);
+	    	}
+	    });
+        });
 
 });
 
 const redisHmset = (key, obj) => new Promise((resolve, reject) => {
-	const client = redisClient();
-
-	client.get(key, (err, res) => {
-		if (err) {
-			reject(err);
-		} else {
-			resolve(res);
-		}
-	});
+	redisClient().then(client => {
+	    client.get(key, (err, res) => {
+	    	if (err) {
+	    		reject(err);
+	    	} else {
+	    		resolve(res);
+	    	}
+	    });
+        });
 });
 
 const getHostInfo = (publicIp, serverId) => new Promise((resolve, reject) => {
-	const client = redisClient();
-
-	client.hmget(publicIp, [serverId], (err, data) => {
-		if (err || !data) {
-			reject(err || 'No host data found');
-		} else {
-			resolve(data[0]);
-		}
-	});
+	redisClient().then(client => {
+	    client.hmget(publicIp, [serverId], (err, data) => {
+	    	if (err || !data) {
+	    		reject(err || 'No host data found');
+	    	} else {
+	    		resolve(data[0]);
+	    	}
+	    });
+        });
 
 });
 
@@ -127,16 +127,13 @@ const app = (req, res) => {
 
         const { headers } = req;
 
-        console.log('pls');
-    console.log(headers);
-
 	const noServers = () => {
 		res.writeHead(200, {
 			'Content-Type': 'text/plain'
 		});
-		res.end('No Homegames servers found. Contact support@homegames.io for help');// + requesterIp + ' ' + process.env.REDIS_HOST + ':' + process.end.REDIS_PORT);
+		res.end('No Homegames servers found. Contact support@homegames.io for help');
 	};
-//        console.log(requesterIp);
+
         if (!headers) {
             noServers();
         } else {
@@ -144,49 +141,47 @@ const app = (req, res) => {
 	        'Content-Type': 'text/plain'
 	    });
 
-            const requesterIp = headers['x-forwarded-for'];
+            const requesterIp = req.connection.remoteAddress || headers['x-forwarded-for'];
 
-	    res.end('No Homegames servers found. Contact support@homegames.io for help hello 3 ' +  requesterIp);// + requesterIp + ' ' + process.env.REDIS_HOST + ':' + process.end.REDIS_PORT);
-    
-        }
+	    getHomegamesServers(requesterIp).then(servers => {
+	    	const serverIds = servers && Object.keys(servers) || [];
+	    	if (serverIds.length === 1) {
+	    		const serverInfo = JSON.parse(servers[serverIds[0]]);
+	    		const hasHttps = serverInfo.https;
+	    		const prefix = hasHttps ? 'https' : 'http';
+	    		const urlOrIp = serverInfo.verifiedUrl || serverInfo.localIp;
+	    		res.writeHead(307, {
+	    			'Location': `${prefix}://${urlOrIp}`,
+	    			'Cache-Control': 'no-store'
+	    		});
+	    		res.end();
+	    	} else if (serverIds.length > 1) {
+	    		const serverOptions = serverIds.map(serverId => {
+	    			const serverInfo = JSON.parse(servers[serverId]);
 
-//	getHomegamesServers(requesterIp).then(servers => {
-//		const serverIds = servers && Object.keys(servers) || [];
-//		if (serverIds.length === 1) {
-//			const serverInfo = JSON.parse(servers[serverIds[0]]);
-//			const hasHttps = serverInfo.https;
-//			const prefix = hasHttps ? 'https' : 'http';
-//			const urlOrIp = serverInfo.verifiedUrl || serverInfo.localIp;
-//			res.writeHead(307, {
-//				'Location': `${prefix}://${urlOrIp}`,
-//				'Cache-Control': 'no-store'
-//			});
-//			res.end();
-//		} else if (serverIds.length > 1) {
-//			const serverOptions = serverIds.map(serverId => {
-//				const serverInfo = JSON.parse(servers[serverId]);
-//
-//				const prefix = serverInfo.https ? 'https': 'http';
-//				const urlOrIp = serverInfo.verifiedUrl || serverInfo.localIp;
-//				const lastHeartbeat = new Date(Number(serverInfo.timestamp));
-//				return `<li><a href="${prefix}://${urlOrIp}"}>Server ID: ${serverId} (Last heartbeat: ${lastHeartbeat})</a></li>`
-//			});
-//
-//			const content = `Homegames server selector: <ul>${serverOptions.join('')}</ul>`;
-//			const response = `<html><body>${content}</body></html>`;
-//			res.writeHead(200, {
-//				'Content-Type': 'text/html'
-//			});
-//			res.end(response);
-//		} else {
-//			console.log('no servers');
-//			noServers();
-//		}
-//	}).catch(err => {
-//		console.log('Error getting host info');
-//		console.log(err);
-//		noServers();
-//	});
+	    			const prefix = serverInfo.https ? 'https': 'http';
+	    			const urlOrIp = serverInfo.verifiedUrl || serverInfo.localIp;
+	    			const lastHeartbeat = new Date(Number(serverInfo.timestamp));
+	    			return `<li><a href="${prefix}://${urlOrIp}"}>Server ID: ${serverId} (Last heartbeat: ${lastHeartbeat})</a></li>`
+	    		});
+
+	    		const content = `Homegames server selector: <ul>${serverOptions.join('')}</ul>`;
+	    		const response = `<html><body>${content}</body></html>`;
+	    		res.writeHead(200, {
+	    			'Content-Type': 'text/html'
+	    		});
+	    		res.end(response);
+	    	} else {
+	    		console.log('no servers');
+	    		noServers();
+	    	}
+
+	}).catch(err => {
+		console.log('Error getting host info');
+		console.log(err);
+		noServers();
+	});
+    }
 };
 
 const hostMapServer = http.createServer(app);
@@ -226,15 +221,17 @@ const clients = {};
 //  }
 //}
 const getHomegamesServers = (publicIp) => new Promise((resolve, reject) => {
-	const client = redisClient();
+	redisClient().then(client => {
 
-	client.hgetall(publicIp, (err, data) => {
-		if (err) {
-			reject(err);
-		} else {
-			resolve(data);
-		}
-	});
+            console.log(publicIp);
+	    client.hgetall(publicIp, (err, data) => {
+	    	if (err) {
+	    		reject(err);
+	    	} else {
+	    		resolve(data);
+	    	}
+	    });
+        });
 });
 
 const deleteHostInfo = (publicIp, localIp) => new Promise((resolve, reject) => {
