@@ -61,7 +61,7 @@ const verifyDNSRecord = (url, ip) => new Promise((resolve, reject) => {
 const redisClient = () => new Promise((resolve, reject) => {
     setTimeout(() => {
         reject('Redis connection timed out');
-    }, 5000);
+    }, 30 * 1000);
 	const client = redis.createClient({
 		host: process.env.REDIS_HOST,
 		port: process.env.REDIS_PORT
@@ -235,60 +235,62 @@ const getHomegamesServers = (publicIp) => new Promise((resolve, reject) => {
 });
 
 const deleteHostInfo = (publicIp, localIp) => new Promise((resolve, reject) => {
-	const client = redisClient();
+        redisClient().then(client => {
 
-	client.hdel(publicIp, [localIp], (err, data) => {
-		if (err) {
-			reject(err);
-		} else {
-			resolve();
-		}
-	});
+	    client.hdel(publicIp, [localIp], (err, data) => {
+	    	if (err) {
+	    		reject(err);
+	    	} else {
+	    		resolve();
+	    	}
+	    });
+        });
 });
 
 const registerHost = (publicIp, info, hostId) => new Promise((resolve, reject) => {
-	const client = redisClient();
+	redisClient().then(client => {
 
-	const doUpdate = () => {
-		const payload = Object.assign({}, info);
-		payload.timestamp = Date.now();
-		client.hmset(publicIp, [hostId, JSON.stringify(payload)], (err, data) => {
-			if (err) {
-				reject(err);
-			} else {
-				resolve();
-			}
-		});
-	}
+	    const doUpdate = () => {
+	    	const payload = Object.assign({}, info);
+	    	payload.timestamp = Date.now();
+	    	client.hmset(publicIp, [hostId, JSON.stringify(payload)], (err, data) => {
+	    		if (err) {
+	    			reject(err);
+	    		} else {
+	    			resolve();
+	    		}
+	    	});
+	    }
 
-	// clear out existing entries
-	client.hgetall(publicIp, (err, data) => {
-		const idsToRemove = [];
-		for (serverId in data) {
-			const serverInfo = JSON.parse(data[serverId]);
-			if (serverInfo.localIp && serverInfo.localIp === info.localIp || !serverInfo.timestamp || serverInfo.timestamp + (5 * 1000 * 60) <= Date.now()) {
-				idsToRemove.push(serverId);
-			}
-		}
+	    // clear out existing entries
+	    client.hgetall(publicIp, (err, data) => {
+	    	const idsToRemove = [];
+	    	for (serverId in data) {
+	    		const serverInfo = JSON.parse(data[serverId]);
+	    		if (serverInfo.localIp && serverInfo.localIp === info.localIp || !serverInfo.timestamp || serverInfo.timestamp + (5 * 1000 * 60) <= Date.now()) {
+	    			idsToRemove.push(serverId);
+	    		}
+	    	}
 
-		let toDeleteCount = idsToRemove.length;
+	    	let toDeleteCount = idsToRemove.length;
 
-		if (toDeleteCount === 0) {
-			doUpdate();
-		} else {
+	    	if (toDeleteCount === 0) {
+	    		doUpdate();
+	    	} else {
 
-			for (const idIndex in idsToRemove) {
-				const id = idsToRemove[idIndex];
+	    		for (const idIndex in idsToRemove) {
+	    			const id = idsToRemove[idIndex];
 
-				client.hdel(publicIp, [id], (err, data) => {
-					toDeleteCount -= 1;
-					if (toDeleteCount == 0) {
-						doUpdate();
-					}
-				});
-			}
-		}
-	});
+	    			client.hdel(publicIp, [id], (err, data) => {
+	    				toDeleteCount -= 1;
+	    				if (toDeleteCount == 0) {
+	    					doUpdate();
+	    				}
+	    			});
+	    		}
+	    	}
+	    });
+        });
 });
 
 const generateSocketId = () => {
