@@ -141,7 +141,7 @@ const app = (req, res) => {
 	        'Content-Type': 'text/plain'
 	    });
 
-            const requesterIp = req.connection.remoteAddress || headers['x-forwarded-for'];
+            const requesterIp = headers['x-forwarded-for'] || req.connection.remoteAddress;
 
 	    getHomegamesServers(requesterIp).then(servers => {
 	    	const serverIds = servers && Object.keys(servers) || [];
@@ -298,32 +298,54 @@ const generateSocketId = () => {
 };
 
 const updatePresence = (publicIp, serverId) => {
+    console.log(`updating presence for server ${serverId}`);
 	getHostInfo(publicIp, serverId).then(hostInfo => {
 		if (!hostInfo) {
+                        console.warn(`no host info found for server ${serverId}`);
 			return;
 		}
 		registerHost(publicIp, JSON.parse(hostInfo), serverId).then(() => {
-			console.log('updated presence');
+                    console.log(`updated presence for server ${serverId}`);
 		});
 	});
 };
 
 const updateHostInfo = (publicIp, serverId, update) => new Promise((resolve, reject) => {
+        console.log(`updating host info for server ${serverId}`);
 	getHostInfo(publicIp, serverId).then(hostInfo => {
 		const newInfo = Object.assign(JSON.parse(hostInfo), update);
 		registerHost(publicIp, newInfo, serverId).then(() => {
-			console.log('updated data');
-		});
+                    console.log(`updated host info for server ${serverId}`);
+                    resolve();
+		}).catch(err => {
+                    console.error(`failed to update host info for server ${serverId}`);
+                    console.error(err);
+                    reject();
+                });
 	});
 });
 
+const logSuccess = (funcName) => {
+    console.error(`function ${funcName} succeeded`);
+};
+
+const logFailure = (funcName) => {
+    console.error(`function ${funcName} failed`);
+};
+
 wss.on('connection', (ws, req) => {
-    console.log('GOT A FUCKIN CONNECTION m8');
-	const socketId = generateSocketId();
+        const publicIp = headers['x-forwarded-for'] || req.connection.remoteAddress;
+
+        if (!publicIp) {
+            console.log(`No public IP found for websocket connection.`)
+            return;
+        }
+
+        console.log(`registering socket client with id: ${ws.id}`);
+
+        const socketId = generateSocketId();
 	ws.id = generateSocketId();
 	clients[ws.id] = ws;
-
-        const publicIp = req.connection.remoteAddress;
 
 	ws.on('message', (_message) => {
 	   
@@ -331,11 +353,9 @@ wss.on('connection', (ws, req) => {
             		const message = JSON.parse(_message);
 
 			if (message.type === 'heartbeat') {
-				updatePresence(publicIp, ws.id);
+				updatePresence(publicIp, ws.id).then(logSuccess('updatePresence')).catch(logFailure('updatePresence'));
 			} else if (message.type === 'register') {
-				registerHost(publicIp, message.data, ws.id).then(() => {
-					console.log('registered host');
-				});
+				registerHost(publicIp, message.data, ws.id).then(logSuccess('registerHost')).catch(logFailure('registerHost'));
 	    		} else if (message.type === 'verify-dns') {
 				verifyAccessToken(message.username, message.accessToken).then(() => {
 		    			const ipSub = message.localIp.replace(/\./g, '-');
@@ -347,7 +367,7 @@ wss.on('connection', (ws, req) => {
 							url: userUrl,
 							success: true
 						}));
-						updateHostInfo(publicIp, ws.id, {verifiedUrl: userUrl});
+						updateHostInfo(publicIp, ws.id, {verifiedUrl: userUrl}).then(logSuccess('upateHostInfo')).catch(logFailure('updateHostInfo'));
 					});
 				});
 			} else {
@@ -362,10 +382,12 @@ wss.on('connection', (ws, req) => {
 	});
 
         ws.on('close', () => {
-            delete clients[ws.id];
+            console.log(`deregistering socket client with id: ${ws.id}`);
+
+            clients[ws.id] && delete clients[ws.id];
 
 		deleteHostInfo(publicIp, ws.id).then(() => {
-			console.log('deleetedede');
+                    console.log(`deregistered socket client with id: ${ws.id}`);
 		});
         });
 });
