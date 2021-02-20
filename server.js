@@ -127,6 +127,9 @@ const app = (req, res) => {
 
         const { headers } = req;
 
+        console.log('pls');
+    console.log(headers);
+
 	const noServers = () => {
 		res.writeHead(200, {
 			'Content-Type': 'text/plain'
