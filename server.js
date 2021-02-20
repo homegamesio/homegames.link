@@ -284,10 +284,11 @@ const updatePresence = (publicIp, serverId) => {
 	getHostInfo(publicIp, serverId).then(hostInfo => {
 		if (!hostInfo) {
                         console.warn(`no host info found for server ${serverId}`);
-			return;
+                        reject();
 		}
 		registerHost(publicIp, JSON.parse(hostInfo), serverId).then(() => {
                     console.log(`updated presence for server ${serverId}`);
+                    resolve();
 		});
 	});
 };
@@ -323,11 +324,13 @@ wss.on('connection', (ws, req) => {
             return;
         }
 
-        console.log(`registering socket client with id: ${ws.id}`);
-
         const socketId = generateSocketId();
-	ws.id = generateSocketId();
+
+	ws.id = socketId;
+
 	clients[ws.id] = ws;
+
+        console.log(`registering socket client with id: ${ws.id}`);
 
 	ws.on('message', (_message) => {
 	   
