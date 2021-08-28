@@ -348,6 +348,7 @@ wss.on('connection', (ws, req) => {
 			} else if (message.type === 'register') {
 				registerHost(publicIp, message.data, ws.id).then(logSuccess('registerHost')).catch(logFailure('registerHost'));
 	    		} else if (message.type === 'verify-dns') {
+                                console.log('verifying dns for user ' + message.username);
 				verifyAccessToken(message.username, message.accessToken).then(() => {
 		    			const ipSub = message.localIp.replace(/\./g, '-');
 					const userHash = getUserHash(message.username);
