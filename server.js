@@ -361,7 +361,11 @@ wss.on('connection', (ws, req) => {
 						}));
 						updateHostInfo(publicIp, ws.id, {verifiedUrl: userUrl}).then(logSuccess('upateHostInfo')).catch(logFailure('updateHostInfo'));
 					}).catch(logFailure('verifyDNSRecord'));
-				});
+				}).catch(err => {
+                                    console.log("Failed to verify access token for user " + message.username);
+                                    console.error(err);
+                                    logFailure('verifyAccessToken');
+                                });
 			} else {
 	    		    console.log("received message without ip");
 	    		    console.log(message);
