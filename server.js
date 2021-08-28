@@ -364,6 +364,11 @@ wss.on('connection', (ws, req) => {
 				}).catch(err => {
                                     console.log("Failed to verify access token for user " + message.username);
                                     console.error(err);
+                                    ws.send(JSON.stringify({
+                                        msgId: message.msgId,
+                                        success: false,
+                                        error: 'Failed to verify access token'
+                                    }));
                                     logFailure('verifyAccessToken');
                                 });
 			} else {
