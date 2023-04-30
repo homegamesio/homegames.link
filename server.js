@@ -124,13 +124,17 @@ const getHostInfo = (publicIp, serverId) => new Promise((resolve, reject) => {
 	    		resolve(data[0]);
 	    	}
 	    });
+        }).catch(err => {
+            console.error('failed to get redis client');
+            console.error(err);
         });
 
 });
 
 const app = (req, res) => {
 //	const requesterIp = req.connection.remoteAddress; 
-
+    
+        console.log('got a request to ' + req.url + ' (' +  req.method + ')');
         const { headers } = req;
 
 	const noServers = () => {
@@ -148,6 +152,8 @@ const app = (req, res) => {
 	    });
 
             const requesterIp = headers['x-forwarded-for'] || req.connection.remoteAddress;
+
+            console.log("REQUESTER IP " + requesterIp);
 
 	    getHomegamesServers(requesterIp).then(servers => {
 	    	const serverIds = servers && Object.keys(servers) || [];
@@ -213,6 +219,8 @@ const getHomegamesServers = (publicIp) => new Promise((resolve, reject) => {
 	redisClient().then(client => {
 
 	    client.hgetall(publicIp, (err, data) => {
+                console.log("HERE ARE SERVERS");
+                console.log(data);
 	    	if (err) {
 	    		reject(err);
 	    	} else {
@@ -285,8 +293,8 @@ const generateSocketId = () => {
 	return uuidv4();
 };
 
-const updatePresence = (publicIp, serverId) => {
-    console.log(`updating presence for server ${serverId}`);
+const updatePresence = (publicIp, serverId) => new Promise((resolve, reject) => {
+    console.log(`updating UPDATED presence for server ${serverId}`);
 	getHostInfo(publicIp, serverId).then(hostInfo => {
 		if (!hostInfo) {
                         console.warn(`no host info found for server ${serverId}`);
@@ -296,8 +304,12 @@ const updatePresence = (publicIp, serverId) => {
                     console.log(`updated presence for server ${serverId}`);
                     resolve();
 		});
-	});
-};
+	}).catch(err => {
+            console.error('error getting host info');
+            console.error(err);
+            reject(err);
+        });      
+});
 
 const updateHostInfo = (publicIp, serverId, update) => new Promise((resolve, reject) => {
         console.log(`updating host info for server ${serverId}`);
@@ -392,6 +404,8 @@ wss.on('connection', (ws, req) => {
 		});
         });
 });
+
+console.log("ABOUT TO LISTEN");
 
 hostMapServer.listen(80);
 //
