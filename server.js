@@ -7,6 +7,32 @@ const AWS = require('aws-sdk');
 const redis = require('redis');
 const { v4: uuidv4 } = require('uuid');
 
+const getLinkRecord = (name, throwOnEmpty) => new Promise((resolve, reject) => {
+    const params = {
+        HostedZoneId: process.env.AWS_ROUTE_53_HOSTED_ZONE_ID,
+        StartRecordName: name,
+        StartRecordType: 'A'
+    };
+
+    const route53 = new AWS.Route53();
+    route53.listResourceRecordSets(params, (err, data) => {
+        if (err) {
+            console.error('error listing record sets');
+            console.error(err);
+            reject(err);
+        } else {
+            for (const i in data.ResourceRecordSets) {
+                const entry = data.ResourceRecordSets[i];
+                if (entry.Name === name + '.') {
+                    resolve(entry.ResourceRecords[0].Value);
+                }
+            }
+            throwOnEmpty ? reject() : resolve(null);
+        }
+    });
+
+});
+
 // todo: move to common
 const createDNSRecord = (url, ip) => new Promise((resolve, reject) => {
     const params = {
@@ -159,30 +185,67 @@ const app = (req, res) => {
 	    	const serverIds = servers && Object.keys(servers) || [];
 	    	if (serverIds.length === 1) {
 	    		const serverInfo = JSON.parse(servers[serverIds[0]]);
-	    		const hasHttps = serverInfo.https;
+                        console.log("THIS IS SERVER INFO");
+                        console.log(serverInfo);
+                        
+                        let ret = serverInfo.localIp;
+	    		
+                        const hasHttps = serverInfo.https;
 	    		const prefix = hasHttps ? 'https' : 'http';
-	    		const urlOrIp = serverInfo.verifiedUrl || serverInfo.localIp;
-	    		res.writeHead(307, {
-	    			'Location': `${prefix}://${urlOrIp}`,
-	    			'Cache-Control': 'no-store'
-	    		});
-	    		res.end();
+
+                        if (hasHttps) {//.username) {
+                            console.log("THIS IS USERNAME!");
+//                            console.log(serverInfo.username);
+  //                          console.log(serverInfo.uesrname + serverInfo.localIp);
+                            const hash = getUserHash(requesterIp);//serverInfo.username + serverInfo.localIp);
+                            getLinkRecord(`${hash}.homegames.link`).then(record => {
+                                console.log("HERE IS THE RECORD AT THAT THING " + hash);
+                                console.log(record);
+                                if (record && record === serverInfo.localIp) {
+                                    ret = `${hash}.homegames.link`;
+                                }
+                                res.writeHead(307, {
+	    		    	    'Location': `${prefix}://${ret}`,
+	    		    	    'Cache-Control': 'no-store'
+	    		        });
+	    		        res.end();
+                            });
+                        } else {
+	    		    res.writeHead(307, {
+	    		    	'Location': `${prefix}://${ret}`,
+	    		    	'Cache-Control': 'no-store'
+	    		    });
+	    		    res.end();
+                        }
 	    	} else if (serverIds.length > 1) {
-	    		const serverOptions = serverIds.map(serverId => {
+	    		Promise.all(serverIds.map(serverId => new Promise((resolve, reject) => {
 	    			const serverInfo = JSON.parse(servers[serverId]);
 
-	    			const prefix = serverInfo.https ? 'https': 'http';
-	    			const urlOrIp = serverInfo.verifiedUrl || serverInfo.localIp;
 	    			const lastHeartbeat = new Date(Number(serverInfo.timestamp));
-	    			return `<li><a href="${prefix}://${urlOrIp}"}>Server ID: ${serverId} (Last heartbeat: ${lastHeartbeat})</a></li>`
-	    		});
 
-	    		const content = `Homegames server selector: <ul>${serverOptions.join('')}</ul>`;
-	    		const response = `<html><body>${content}</body></html>`;
-	    		res.writeHead(200, {
-	    			'Content-Type': 'text/html'
-	    		});
-	    		res.end(response);
+	    			const prefix = serverInfo.https ? 'https': 'http';
+                                let ret = serverInfo && serverInfo.localIp;
+
+                                if (serverInfo.username) {
+                                    const hash = getUserHash(requesterIp);//serverInfo.username + serverInfo.localIp);
+                                    getLinkRecord(`${hash}.homegames.link`).then(record => {
+                                        if (record && record === serverInfo.localIp) {
+                                            ret = `${hash}.homegames.link`;
+	    			            resolve(`<li><a href="${prefix}://${ret}"}>Server ID: ${serverId} (Last heartbeat: ${lastHeartbeat})</a></li>`);
+                                        }
+                                    });
+                                } else {
+                                    resolve(`<li><a href="${prefix}://${ret}"}>Server ID: ${serverId} (Last heartbeat: ${lastHeartbeat})</a></li>`);
+                                }
+
+                        }))).then(serverOptions => {
+	    		    const content = `Homegames server selector: <ul>${serverOptions.join('')}</ul>`;
+	    		    const response = `<html><body>${content}</body></html>`;
+	    		    res.writeHead(200, {
+	    		    	'Content-Type': 'text/html'
+	    		    });
+	    		    res.end(response);
+                        });
 	    	} else {
 	    		console.log('no servers');
 	    		noServers();
@@ -216,6 +279,7 @@ const clients = {};
 //  }
 //}
 const getHomegamesServers = (publicIp) => new Promise((resolve, reject) => {
+        console.log('getting homegames servers!');
 	redisClient().then(client => {
 
 	    client.hgetall(publicIp, (err, data) => {
@@ -244,6 +308,8 @@ const deleteHostInfo = (publicIp, localIp) => new Promise((resolve, reject) => {
 });
 
 const registerHost = (publicIp, info, hostId) => new Promise((resolve, reject) => {
+        console.log('registering host with public ip ' + publicIp);
+        console.log(info);
 	redisClient().then(client => {
 
 	    const doUpdate = () => {
@@ -263,7 +329,9 @@ const registerHost = (publicIp, info, hostId) => new Promise((resolve, reject) =
 	    	const idsToRemove = [];
 	    	for (serverId in data) {
 	    		const serverInfo = JSON.parse(data[serverId]);
-	    		if (serverInfo.localIp && serverInfo.localIp === info.localIp || !serverInfo.timestamp || serverInfo.timestamp + (5 * 1000 * 60) <= Date.now()) {
+                        if (!serverInfo) {
+                            idsToRemove.push(serverId);
+                        } else if (serverInfo.localIp && serverInfo.localIp === info.localIp || !serverInfo.timestamp || serverInfo.timestamp + (5 * 1000 * 60) <= Date.now()) {
 	    			idsToRemove.push(serverId);
 	    		}
 	    	}
@@ -356,23 +424,37 @@ wss.on('connection', (ws, req) => {
             		const message = JSON.parse(_message);
 
 			if (message.type === 'heartbeat') {
-				updatePresence(publicIp, ws.id).then(logSuccess('updatePresence')).catch(logFailure('updatePresence'));
+				updatePresence(publicIp, ws.id).then(() => logSuccess('updatePresence')).catch(() => logFailure('updatePresence'));
 			} else if (message.type === 'register') {
-				registerHost(publicIp, message.data, ws.id).then(logSuccess('registerHost')).catch(logFailure('registerHost'));
+                                console.log('this is message');
+                                console.log(message);
+                                const localIp = message.data.localIp;
+                                const username = message.data.username;
+                                //if (!localIp || !username) {
+                                //    console.error('Not registering server with public ip ' + publicIp);
+                                //    console.error(message);
+                                //} else {
+                                    createDNSRecord(`${getUserHash(publicIp)}.homegames.link`, publicIp).then(() => {
+                                        console.log('created dns record!');
+				        registerHost(publicIp, message.data, ws.id).then(() => logSuccess('registerHost')).catch(() => logFailure('registerHost'));
+                                    }).catch(err => {
+                                        console.error('failed to create dns record');
+                                        console.error(err);
+                                    });
+                                //}
 	    		} else if (message.type === 'verify-dns') {
                                 console.log('verifying dns for user ' + message.username);
 				verifyAccessToken(message.username, message.accessToken).then(() => {
-		    			const ipSub = message.localIp.replace(/\./g, '-');
-					const userHash = getUserHash(message.username);
-		    			const userUrl = `${ipSub}.${userHash}.homegames.link`;
+					const userHash = getUserHash(publicIp);//message.username + message.localIp);
+		    			const userUrl = `${userHash}.homegames.link`;
 					verifyDNSRecord(userUrl, message.localIp).then(() => {
 						ws.send(JSON.stringify({
 							msgId: message.msgId,
 							url: userUrl,
 							success: true
 						}));
-						updateHostInfo(publicIp, ws.id, {verifiedUrl: userUrl}).then(logSuccess('upateHostInfo')).catch(logFailure('updateHostInfo'));
-					}).catch(logFailure('verifyDNSRecord'));
+						updateHostInfo(publicIp, ws.id, {verifiedUrl: userUrl}).then(() => logSuccess('upateHostInfo')).catch(() => logFailure('updateHostInfo'));
+					}).catch(() => logFailure('verifyDNSRecord'));
 				}).catch(err => {
                                     console.log("Failed to verify access token for user " + message.username);
                                     console.error(err);
