@@ -39,7 +39,7 @@ const createDNSRecord = (url, ip) => new Promise((resolve, reject) => {
         ChangeBatch: {
             Changes: [
                 {
-                    Action: "CREATE", 
+                    Action: "UPSERT", 
                     ResourceRecordSet: {
                         Name: url,
                         ResourceRecords: [
