@@ -434,7 +434,7 @@ wss.on('connection', (ws, req) => {
                                 //    console.error('Not registering server with public ip ' + publicIp);
                                 //    console.error(message);
                                 //} else {
-                                    createDNSRecord(`${getUserHash(publicIp)}.homegames.link`, publicIp).then(() => {
+                                    createDNSRecord(`${getUserHash(publicIp)}.homegames.link`, localIp).then(() => {
                                         console.log('created dns record!');
 				        registerHost(publicIp, message.data, ws.id).then(() => logSuccess('registerHost')).catch(() => logFailure('registerHost'));
                                     }).catch(err => {
