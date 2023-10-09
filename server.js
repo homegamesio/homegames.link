@@ -164,10 +164,15 @@ const app = (req, res) => {
         const { headers } = req;
 
 	const noServers = () => {
-		res.writeHead(200, {
-			'Content-Type': 'text/plain'
-		});
-		res.end('No Homegames servers found. Contact support@homegames.io for help');
+//		res.writeHead(200, {
+//			'Content-Type': 'text/plain'
+//		});
+                                res.writeHead(307, {
+	    		    	    'Location': `https://public.homegames.link`,
+	    		    	    'Cache-Control': 'no-store'
+	    		        });
+	    		        res.end();
+ 
 	};
 
         if (!headers) {
@@ -329,11 +334,14 @@ const registerHost = (publicIp, info, hostId) => new Promise((resolve, reject) =
 	    	const idsToRemove = [];
 	    	for (serverId in data) {
 	    		const serverInfo = JSON.parse(data[serverId]);
+                        console.log('somehow no local ip for this one');
                         if (!serverInfo) {
                             idsToRemove.push(serverId);
-                        } else if (serverInfo.localIp && serverInfo.localIp === info.localIp || !serverInfo.timestamp || serverInfo.timestamp + (5 * 1000 * 60) <= Date.now()) {
+                        } else {
+                            if (serverInfo.localIp && serverInfo.localIp === info.localIp || !serverInfo.timestamp || serverInfo.timestamp + (5 * 1000 * 60) <= Date.now()) {
 	    			idsToRemove.push(serverId);
-	    		}
+	    		    }
+                        }
 	    	}
 
 	    	let toDeleteCount = idsToRemove.length;
