@@ -164,15 +164,15 @@ const app = (req, res) => {
         const { headers } = req;
 
 	const noServers = () => {
-//		res.writeHead(200, {
-//			'Content-Type': 'text/plain'
-//		});
-                                res.writeHead(307, {
-	    		    	    'Location': `https://public.homegames.link`,
-	    		    	    'Cache-Control': 'no-store'
-	    		        });
-	    		        res.end();
- 
+		res.writeHead(200, {
+			'Content-Type': 'text/plain'
+		});
+                //                res.writeHead(307, {
+	    	//	    	    'Location': `https://public.homegames.link`,
+	    	//	    	    'Cache-Control': 'no-store'
+	    	//	        });
+//	    		        res.end();
+                res.end('No Homegames servers found. Contact joseph@homegames.io for support'); 
 	};
 
         if (!headers) {
