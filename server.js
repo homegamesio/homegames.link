@@ -335,6 +335,7 @@ const registerHost = (publicIp, info, hostId) => new Promise((resolve, reject) =
 	    	for (serverId in data) {
 	    		const serverInfo = JSON.parse(data[serverId]);
                         console.log('somehow no local ip for this one');
+                        console.log(serverInfo);
                         if (!serverInfo) {
                             idsToRemove.push(serverId);
                         } else {
