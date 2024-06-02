@@ -4,7 +4,6 @@ const process = require('process');
 const path = require('path');
 const { getUserHash, verifyAccessToken } = require('homegames-common');
 const AWS = require('aws-sdk');
-const redis = require('redis');
 const { v4: uuidv4 } = require('uuid');
 
 const getLinkRecord = (name, throwOnEmpty) => new Promise((resolve, reject) => {
@@ -90,71 +89,22 @@ const verifyDNSRecord = (url, ip) => new Promise((resolve, reject) => {
     });
 });
 
-const redisClient = () => new Promise((resolve, reject) => {
-    setTimeout(() => {
-        reject('Redis connection timed out');
-    }, 30 * 1000);
-	const client = redis.createClient({
-		host: process.env.REDIS_HOST,
-		port: process.env.REDIS_PORT
-	}).on('error', (err) => {
-            reject(err);
-        }).on('ready', () => {
-            resolve(client);
-        });
-});
-
-const redisGet = (key) => new Promise((resolve, reject) => {
-	redisClient().then(client => {
-	    client.get(key, (err, res) => {
-	    	if (err) {
-	    		reject(err);
-	    	} else {
-	    		resolve(res);
-	    	}
-	    });
-        });
-});
-
-const redisSet = (key, value) => new Promise((resolve, reject) => {	
-	redisClient().then(client => {
-	    client.set(key, value, (err, res) => {
-	    	if (err) {
-	    		reject(err);
-	    	} else {
-	    		resolve(res);
-	    	}
-	    });
-        });
-
-});
-
-const redisHmset = (key, obj) => new Promise((resolve, reject) => {
-	redisClient().then(client => {
-	    client.get(key, (err, res) => {
-	    	if (err) {
-	    		reject(err);
-	    	} else {
-	    		resolve(res);
-	    	}
-	    });
-        });
-});
-
 const getHostInfo = (publicIp, serverId) => new Promise((resolve, reject) => {
-	redisClient().then(client => {
-	    client.hmget(publicIp, [serverId], (err, data) => {
-	    	if (err || !data) {
-	    		reject(err || 'No host data found');
-	    	} else {
-	    		resolve(data[0]);
-	    	}
-	    });
-        }).catch(err => {
-            console.error('failed to get redis client');
-            console.error(err);
-        });
-
+	const publicIpInfo = cache.get(publicIp);
+	if (publicIpInfo) {
+		console.log('something there');
+		console.log(publicIpInfo);
+		const parsed = publicIpInfo;
+		if (parsed[serverId]) {
+			console.log('someoeeoeoeoeo');
+			console.log(parsed);
+			resolve(parsed[serverId]);
+		} else {
+			resolve({});
+		}
+	} else {
+		resolve({});
+	}
 });
 
 const app = (req, res) => {
@@ -189,7 +139,7 @@ const app = (req, res) => {
 	    getHomegamesServers(requesterIp).then(servers => {
 	    	const serverIds = servers && Object.keys(servers) || [];
 	    	if (serverIds.length === 1) {
-	    		const serverInfo = JSON.parse(servers[serverIds[0]]);
+	    		const serverInfo = servers[serverIds[0]];
                         console.log("THIS IS SERVER INFO");
                         console.log(serverInfo);
                         
@@ -224,7 +174,7 @@ const app = (req, res) => {
                         }
 	    	} else if (serverIds.length > 1) {
 	    		Promise.all(serverIds.map(serverId => new Promise((resolve, reject) => {
-	    			const serverInfo = JSON.parse(servers[serverId]);
+	    			const serverInfo = servers[serverId];
 
 	    			const lastHeartbeat = new Date(Number(serverInfo.timestamp));
 
@@ -270,100 +220,71 @@ const wss = new WebSocket.Server({ server: hostMapServer });
 
 const clients = {};
 
+class Cache {
+	constructor() {
+		this.cache = {};
+	}
 
-// Redis key structure
-//{
-//  "publicIp": {
-//    "serverId1": {
-//      ...
-//    },
-//    "serverId2": {
-//	...
-//    },
-//    ...
-//  }
-//}
+	set(key, val) { 
+		this.cache[key] = val;
+	}
+
+	get(key) {
+		return this.cache[key];
+	}
+}
+
+const cache = new Cache();
+
 const getHomegamesServers = (publicIp) => new Promise((resolve, reject) => {
         console.log('getting homegames servers!');
-	redisClient().then(client => {
-
-	    client.hgetall(publicIp, (err, data) => {
-                console.log("HERE ARE SERVERS");
-                console.log(data);
-	    	if (err) {
-	    		reject(err);
-	    	} else {
-	    		resolve(data);
-	    	}
-	    });
-        });
+	const serverOptions = cache.get(publicIp);
+	if (serverOptions) {
+		console.log("these are op[tions");
+		console.log(serverOptions);
+		resolve(serverOptions);
+	} else {
+		resolve({});
+	}
 });
 
 const deleteHostInfo = (publicIp, localIp) => new Promise((resolve, reject) => {
-        redisClient().then(client => {
-
-	    client.hdel(publicIp, [localIp], (err, data) => {
-	    	if (err) {
-	    		reject(err);
-	    	} else {
-	    		resolve();
-	    	}
-	    });
-        });
+	const currentMappings = cache.get(publicIp);
+	if (currentMappings) {
+		if (currentMappings[localIp]) {
+			const newMappings = Object.assign({}, currentMappings);
+			delete newMappings[localIp];
+			cache.set(publicIp, newMappings);
+		}
+		resolve();
+	} else {
+		resolve();
+	}
 });
 
 const registerHost = (publicIp, info, hostId) => new Promise((resolve, reject) => {
         console.log('registering host with public ip ' + publicIp);
         console.log(info);
-	redisClient().then(client => {
+	const currentMappings = cache.get(publicIp);
+	if (currentMappings) {
+		const newVals = Object.assign({}, currentMappings);
+		const toCache = Object.assign({}, info);
+		toCache.hostId = hostId;
+		toCache.timestamp = Date.now();
+	
+		newVals[hostId] = toCache;
 
-	    const doUpdate = () => {
-	    	const payload = Object.assign({}, info);
-	    	payload.timestamp = Date.now();
-	    	client.hmset(publicIp, [hostId, JSON.stringify(payload)], (err, data) => {
-	    		if (err) {
-	    			reject(err);
-	    		} else {
-	    			resolve();
-	    		}
-	    	});
-	    }
-
-	    // clear out existing entries
-	    client.hgetall(publicIp, (err, data) => {
-	    	const idsToRemove = [];
-	    	for (serverId in data) {
-	    		const serverInfo = JSON.parse(data[serverId]);
-                        console.log('somehow no local ip for this one');
-                        console.log(serverInfo);
-                        if (!serverInfo) {
-                            idsToRemove.push(serverId);
-                        } else {
-                            if (serverInfo.localIp && serverInfo.localIp === info.localIp || !serverInfo.timestamp || serverInfo.timestamp + (5 * 1000 * 60) <= Date.now()) {
-	    			idsToRemove.push(serverId);
-	    		    }
-                        }
-	    	}
-
-	    	let toDeleteCount = idsToRemove.length;
-
-	    	if (toDeleteCount === 0) {
-	    		doUpdate();
-	    	} else {
-
-	    		for (const idIndex in idsToRemove) {
-	    			const id = idsToRemove[idIndex];
-
-	    			client.hdel(publicIp, [id], (err, data) => {
-	    				toDeleteCount -= 1;
-	    				if (toDeleteCount == 0) {
-	    					doUpdate();
-	    				}
-	    			});
-	    		}
-	    	}
-	    });
-        });
+		cache.set(publicIp, newVals);
+		resolve();
+	} else {
+		const toCache = Object.assign({}, info);
+		toCache.hostId = hostId;
+		toCache.timestamp = Date.now();
+		console.log("caching");
+		console.log(toCache);
+		cache.set(publicIp, { [hostId]: toCache });	
+		resolve();
+	}
 });
 
 const generateSocketId = () => {
@@ -377,7 +298,7 @@ const updatePresence = (publicIp, serverId) => new Promise((resolve, reject) => 
                         console.warn(`no host info found for server ${serverId}`);
                         reject();
 		}
-		registerHost(publicIp, JSON.parse(hostInfo), serverId).then(() => {
+		registerHost(publicIp, hostInfo, serverId).then(() => {
                     console.log(`updated presence for server ${serverId}`);
                     resolve();
 		});
@@ -391,7 +312,7 @@ const updatePresence = (publicIp, serverId) => new Promise((resolve, reject) => 
 const updateHostInfo = (publicIp, serverId, update) => new Promise((resolve, reject) => {
         console.log(`updating host info for server ${serverId}`);
 	getHostInfo(publicIp, serverId).then(hostInfo => {
-		const newInfo = Object.assign(JSON.parse(hostInfo), update);
+		const newInfo = Object.assign(hostInfo, update);
 		registerHost(publicIp, newInfo, serverId).then(() => {
                     console.log(`updated host info for server ${serverId}`);
                     resolve();
@@ -498,6 +419,4 @@ wss.on('connection', (ws, req) => {
 
 console.log("ABOUT TO LISTEN");
 
-hostMapServer.listen(80);
-//
-//const HTTP_PORT = 80;
+hostMapServer.listen(process.env.PORT || 8000);
