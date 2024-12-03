@@ -1,10 +1,57 @@
 const WebSocket = require('ws');
+const redis = require('redis');
 const http = require('http');
 const process = require('process');
 const path = require('path');
 const { getUserHash, verifyAccessToken } = require('homegames-common');
 const AWS = require('aws-sdk');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
+
+const geoip = require('geoip-lite');
+
+const getCountryByIp = (ip) => {
+    const geo = geoip.lookup(ip);
+    if (geo && geo.country) {
+        return geo.country;
+    }
+
+    return null;
+};
+
+const getHash = (input) => {
+    return crypto.createHash('md5').update(input).digest('hex');
+};
+
+const redisPutString = (key, val) => new Promise((resolve, reject) => {
+	const client = redis.createClient();	
+	client.on('connect', () => {
+		console.log('connected for put');
+		client.set(key, val, (err) => {
+			if (!err) {
+				resolve();
+			} else {
+				reject(err);
+			}
+		});
+	});
+});
+
+const redisDelete = (key) => new Promise((resolve, reject) => {
+	const client = redis.createClient();	
+	client.on('connect', () => {
+		console.log('connected for delete');
+		client.del(key, (err) => {
+			console.log('cool deleted');
+			if (!err) {
+				resolve();
+			} else {
+				reject(err);
+			}
+		});
+	});
+
+});
 
 const getLinkRecord = (name, throwOnEmpty) => new Promise((resolve, reject) => {
     const params = {
@@ -345,6 +392,7 @@ wss.on('connection', (ws, req) => {
 	ws.id = socketId;
 
 	clients[ws.id] = ws;
+	let mapEnabled = false;
 
         console.log(`registering socket client with id: ${ws.id}`);
 
@@ -360,6 +408,17 @@ wss.on('connection', (ws, req) => {
                                 console.log(message);
                                 const localIp = message.data.localIp;
                                 const username = message.data.username;
+				mapEnabled = message.data.mapEnabled;
+				if (mapEnabled) {
+					console.log('sickk');
+					// todo: there will be a list of sessions on this server
+					const countryCode = getCountryByIp(publicIp);
+					if (countryCode) {
+						redisPutString(getHash(publicIp), JSON.stringify({"country": countryCode, "sessions": []})).then(() => {
+							console.log("stored. an async job will update the computed response");
+						});
+					}
+				}
                                 //if (!localIp || !username) {
                                 //    console.error('Not registering server with public ip ' + publicIp);
                                 //    console.error(message);
@@ -413,6 +472,9 @@ wss.on('connection', (ws, req) => {
 
 		deleteHostInfo(publicIp, ws.id).then(() => {
                     console.log(`deregistered socket client with id: ${ws.id}`);
+			if (mapEnabled) {
+				redisDelete(getHash(publicIp));
+			}
 		});
         });
 });
