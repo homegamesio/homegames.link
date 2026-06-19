@@ -23,35 +23,91 @@ const getHash = (input) => {
     return crypto.createHash('md5').update(input).digest('hex');
 };
 
+// Real source IP as seen by our trusted nginx hop. nginx appends the connecting
+// peer to any client-supplied X-Forwarded-For, so the RIGHTMOST entry is the
+// trustworthy one; leftmost entries are attacker-controllable. Cert/DNS
+// ownership is bound to this value, so it must not be spoofable.
+// NOTE: assumes a single trusted proxy (nginx). Revisit if a CDN is added.
+const getClientIp = (req) => {
+    const forwarded = req.headers['x-forwarded-for'];
+    if (forwarded) {
+        const hops = forwarded.split(',').map(h => h.trim()).filter(Boolean);
+        if (hops.length) return hops[hops.length - 1];
+    }
+    return (req.connection && req.connection.remoteAddress) || (req.socket && req.socket.remoteAddress);
+};
+
+// Is this a private (RFC1918 / loopback / link-local / CGNAT) IPv4 address?
+// register only maps a subdomain to a LAN IP, so we reject public IPs to avoid
+// pointing *.homegames.link at arbitrary internet hosts.
+const isPrivateIp = (ip) => {
+    if (!ip || typeof ip !== 'string') return false;
+    // Strip an IPv4-mapped IPv6 prefix (e.g. ::ffff:192.168.1.2)
+    const v4 = ip.replace(/^::ffff:/i, '');
+    const m = v4.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (!m) return false;
+    const [a, b] = [Number(m[1]), Number(m[2])];
+    if ([a, b, Number(m[3]), Number(m[4])].some(n => n > 255)) return false;
+    if (a === 10) return true;                      // 10.0.0.0/8
+    if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+    if (a === 192 && b === 168) return true;        // 192.168.0.0/16
+    if (a === 127) return true;                     // loopback
+    if (a === 169 && b === 254) return true;        // link-local
+    if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 CGNAT
+    return false;
+};
+
+// Single shared Redis client (Redis backs only the optional map/geo feature).
+// Reused across calls so we don't leak a fresh TCP connection per register /
+// disconnect. The 'error' handler is mandatory: a node-redis client with no
+// 'error' listener throws an UNCAUGHT exception on connection failure, which
+// would crash this process — and since Redis is optional here, an outage must
+// degrade the map feature, not take down the redirect service.
+const redisClient = redis.createClient({
+	host: process.env.REDIS_HOST || '127.0.0.1',
+	port: process.env.REDIS_PORT || 6379
+});
+
+redisClient.on('error', (err) => {
+	console.error('Redis client error (map/geo feature degraded):');
+	console.error(err);
+});
+
 const redisPutString = (key, val) => new Promise((resolve, reject) => {
-	const client = redis.createClient();	
-	client.on('connect', () => {
-		console.log('connected for put');
-		client.set(key, val, (err) => {
-			if (!err) {
-				resolve();
-			} else {
-				reject(err);
-			}
-		});
+	redisClient.set(key, val, (err) => {
+		if (!err) {
+			resolve();
+		} else {
+			reject(err);
+		}
 	});
 });
 
 const redisDelete = (key) => new Promise((resolve, reject) => {
-	const client = redis.createClient();	
-	client.on('connect', () => {
-		console.log('connected for delete');
-		client.del(key, (err) => {
-			console.log('cool deleted');
-			if (!err) {
-				resolve();
-			} else {
-				reject(err);
-			}
-		});
+	redisClient.del(key, (err) => {
+		if (!err) {
+			resolve();
+		} else {
+			reject(err);
+		}
 	});
-
 });
+
+/* DEPRECATED — previous per-call client (leaked a connection on every call and
+   had no error handler, so a Redis outage crashed the process):
+const redisPutString = (key, val) => new Promise((resolve, reject) => {
+	const client = redis.createClient();
+	client.on('connect', () => {
+		client.set(key, val, (err) => { if (!err) { resolve(); } else { reject(err); } });
+	});
+});
+const redisDelete = (key) => new Promise((resolve, reject) => {
+	const client = redis.createClient();
+	client.on('connect', () => {
+		client.del(key, (err) => { if (!err) { resolve(); } else { reject(err); } });
+	});
+});
+*/
 
 const getLinkRecord = (name, throwOnEmpty) => new Promise((resolve, reject) => {
     const params = {
@@ -105,7 +161,14 @@ const createDNSRecord = (url, ip) => new Promise((resolve, reject) => {
     const route53 = new AWS.Route53();
     
     route53.changeResourceRecordSets(params, (err, data) => {
-	    resolve();
+	    // Reject on error instead of silently reporting success — callers
+	    // (e.g. register) rely on this to decide whether the DNS record really
+	    // exists before trusting it / advertising verifiedUrl.
+	    if (err) {
+		    reject(err);
+	    } else {
+		    resolve(data);
+	    }
     });
 });
 
@@ -154,8 +217,18 @@ const getHostInfo = (publicIp, serverId) => new Promise((resolve, reject) => {
 	}
 });
 
+// Page shown when an instance is present on this network but its HTTPS cert/DNS
+// is still provisioning. Auto-refreshes so the browser lands on the secure
+// instance as soon as it's ready. Distinct from the "no servers found" page:
+// presence in the discovery cache means an instance exists, httpsReady=false
+// means it just isn't serving HTTPS yet.
+const settingUpPage = () => {
+    const content = `Your Homegames instance is setting up a secure connection. This page will refresh automatically.`;
+    return `<html><head><meta http-equiv="refresh" content="5"><title>Homegames - setting up</title></head><body>${content}</body></html>`;
+};
+
 const app = (req, res) => {
-//	const requesterIp = req.connection.remoteAddress; 
+//	const requesterIp = req.connection.remoteAddress;
     
         console.log('got a request to ' + req.url + ' (' +  req.method + ')');
         const { headers } = req;
@@ -175,11 +248,14 @@ const app = (req, res) => {
         if (!headers) {
             noServers();
         } else {
-            res.writeHead(200, {
-	        'Content-Type': 'text/plain'
-	    });
+            // NOTE: removed a premature res.writeHead(200) here — each branch below
+            // now writes its own status (307 redirect / 200 selector / 200 setting-up),
+            // and writing the header twice throws ERR_HTTP_HEADERS_SENT.
+            // res.writeHead(200, {
+	        // 'Content-Type': 'text/plain'
+	    // });
 
-            const requesterIp = headers['x-forwarded-for'] || req.connection.remoteAddress;
+            const requesterIp = getClientIp(req);
 
             console.log("REQUESTER IP " + requesterIp);
 
@@ -189,20 +265,57 @@ const app = (req, res) => {
 	    		const serverInfo = servers[serverIds[0]];
                         console.log("THIS IS SERVER INFO");
                         console.log(serverInfo);
-                        
+
+                        // httpsEnabled: instance intends to serve HTTPS.
+                        // httpsReady:   cert installed AND HTTPS server actually up.
+                        // Fall back to the legacy single `https` boolean for older
+                        // clients that don't report the split fields yet (in which
+                        // case "enabled" implies "ready").
+                        const httpsEnabled = serverInfo.httpsEnabled !== undefined ? serverInfo.httpsEnabled : serverInfo.https;
+                        const httpsReady = serverInfo.httpsReady !== undefined ? serverInfo.httpsReady : serverInfo.https;
+
+                        if (!httpsEnabled) {
+                            // Plain-HTTP instance — ready now, redirect to the local IP.
+                            res.writeHead(307, {
+                                'Location': `http://${serverInfo.localIp}`,
+                                'Cache-Control': 'no-store'
+                            });
+                            res.end();
+                        } else if (!httpsReady) {
+                            // HTTPS intended but cert/DNS not provisioned yet.
+                            res.writeHead(200, {
+                                'Content-Type': 'text/html',
+                                'Cache-Control': 'no-store'
+                            });
+                            res.end(settingUpPage());
+                        } else if (serverInfo.verifiedUrl) {
+                            // HTTPS ready and the DNS record was confirmed at register
+                            // time (verifiedUrl set only after a successful createDNSRecord).
+                            // Redirect straight from cache — no Route53 call on the hot path.
+                            res.writeHead(307, {
+                                'Location': `https://${serverInfo.verifiedUrl}`,
+                                'Cache-Control': 'no-store'
+                            });
+                            res.end();
+                        } else {
+                            // HTTPS intended and ready, but the DNS record isn't confirmed
+                            // yet — treat as still setting up rather than redirecting to a
+                            // name that won't resolve to this instance.
+                            res.writeHead(200, {
+                                'Content-Type': 'text/html',
+                                'Cache-Control': 'no-store'
+                            });
+                            res.end(settingUpPage());
+                        }
+
+                        /* DEPRECATED — previous single-server logic, replaced by the
+                           httpsEnabled/httpsReady three-way handling above.
                         let ret = serverInfo.localIp;
-	    		
                         const hasHttps = serverInfo.https;
 	    		const prefix = hasHttps ? 'https' : 'http';
-
-                        if (hasHttps) {//.username) {
-                            console.log("THIS IS USERNAME!");
-//                            console.log(serverInfo.username);
-  //                          console.log(serverInfo.uesrname + serverInfo.localIp);
-                            const hash = getUserHash(requesterIp);//serverInfo.username + serverInfo.localIp);
+                        if (hasHttps) {
+                            const hash = getUserHash(requesterIp);
                             getLinkRecord(`${hash}.homegames.link`).then(record => {
-                                console.log("HERE IS THE RECORD AT THAT THING " + hash);
-                                console.log(record);
                                 if (record && record === serverInfo.localIp) {
                                     ret = `${hash}.homegames.link`;
                                 }
@@ -219,26 +332,22 @@ const app = (req, res) => {
 	    		    });
 	    		    res.end();
                         }
+                        */
 	    	} else if (serverIds.length > 1) {
 	    		Promise.all(serverIds.map(serverId => new Promise((resolve, reject) => {
 	    			const serverInfo = servers[serverId];
 
 	    			const lastHeartbeat = new Date(Number(serverInfo.timestamp));
 
-	    			const prefix = serverInfo.https ? 'https': 'http';
-                                let ret = serverInfo && serverInfo.localIp;
+                                // Use the DNS hostname confirmed at register time (verifiedUrl)
+                                // so the selector links to the secure subdomain without any
+                                // Route53 call on the hot path; fall back to the raw local IP
+                                // (http) when it isn't confirmed yet. Always resolves, so the
+                                // selector page can't hang on a missing/mismatched record.
+                                const ret = serverInfo.verifiedUrl || (serverInfo && serverInfo.localIp);
+                                const prefix = serverInfo.verifiedUrl ? 'https' : 'http';
 
-                                if (serverInfo.username) {
-                                    const hash = getUserHash(requesterIp);//serverInfo.username + serverInfo.localIp);
-                                    getLinkRecord(`${hash}.homegames.link`).then(record => {
-                                        if (record && record === serverInfo.localIp) {
-                                            ret = `${hash}.homegames.link`;
-	    			            resolve(`<li><a href="${prefix}://${ret}"}>Server ID: ${serverId} (Last heartbeat: ${lastHeartbeat})</a></li>`);
-                                        }
-                                    });
-                                } else {
-                                    resolve(`<li><a href="${prefix}://${ret}"}>Server ID: ${serverId} (Last heartbeat: ${lastHeartbeat})</a></li>`);
-                                }
+                                resolve(`<li><a href="${prefix}://${ret}">Server ID: ${serverId} (Last heartbeat: ${lastHeartbeat})</a></li>`);
 
                         }))).then(serverOptions => {
 	    		    const content = `Homegames server selector: <ul>${serverOptions.join('')}</ul>`;
@@ -380,7 +489,7 @@ const logFailure = (funcName) => {
 };
 
 wss.on('connection', (ws, req) => {
-        const publicIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+        const publicIp = getClientIp(req);
 
         if (!publicIp) {
             console.log(`No public IP found for websocket connection.`)
@@ -396,6 +505,14 @@ wss.on('connection', (ws, req) => {
 
         console.log(`registering socket client with id: ${ws.id}`);
 
+        let receivedRegister = false;
+        // if they havent sent us a message in 15 seconds since connecting, close the connection
+        setTimeout(() => {
+            if (!receivedRegister) {
+                ws.close();
+            }
+        }, 5 * 1000);
+
 	ws.on('message', (_message) => {
 	   
 		try {
@@ -406,6 +523,9 @@ wss.on('connection', (ws, req) => {
 			} else if (message.type === 'register') {
                                 console.log('this is message');
                                 console.log(message);
+                                // Mark this connection as registered so the 5s
+                                // idle-disconnect timeout doesn't kill it.
+                                receivedRegister = true;
                                 const localIp = message.data.localIp;
                                 const username = message.data.username;
 				mapEnabled = message.data.mapEnabled;
@@ -419,18 +539,28 @@ wss.on('connection', (ws, req) => {
 						});
 					}
 				}
-                                //if (!localIp || !username) {
-                                //    console.error('Not registering server with public ip ' + publicIp);
-                                //    console.error(message);
-                                //} else {
-                                    createDNSRecord(`${getUserHash(publicIp)}.homegames.link`, localIp).then(() => {
+                                // The subdomain is keyed on the REAL public IP (publicIp
+                                // comes from getClientIp -> nginx hop, not spoofable), so a
+                                // client can only map its own network's subdomain. We also
+                                // require localIp to be a private/LAN address so the record
+                                // can't be pointed at an arbitrary public host.
+                                if (!isPrivateIp(localIp)) {
+                                    console.error('Refusing to register non-private localIp ' + localIp + ' for public ip ' + publicIp);
+                                } else {
+                                    const dnsName = `${getUserHash(publicIp)}.homegames.link`;
+                                    createDNSRecord(dnsName, localIp).then(() => {
                                         console.log('created dns record!');
+                                        // Stash the now-confirmed hostname so app() can redirect
+                                        // straight from cache instead of hitting Route53 on every
+                                        // browser request. Only set after a SUCCESSFUL create, so
+                                        // a failed write (now rejects) won't advertise a bad URL.
+                                        message.data.verifiedUrl = dnsName;
 				        registerHost(publicIp, message.data, ws.id).then(() => logSuccess('registerHost')).catch(() => logFailure('registerHost'));
                                     }).catch(err => {
                                         console.error('failed to create dns record');
                                         console.error(err);
                                     });
-                                //}
+                                }
 	    		} else if (message.type === 'verify-dns') {
                                 console.log('verifying dns for user ' + message.username);
 				verifyAccessToken(message.username, message.accessToken).then(() => {
