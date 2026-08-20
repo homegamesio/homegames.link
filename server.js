@@ -274,10 +274,15 @@ const app = (req, res) => {
                         const httpsEnabled = serverInfo.httpsEnabled !== undefined ? serverInfo.httpsEnabled : serverInfo.https;
                         const httpsReady = serverInfo.httpsReady !== undefined ? serverInfo.httpsReady : serverInfo.https;
 
+                        // Modern instances serve everything on one port and report
+                        // it at register time; without it the URL falls back to the
+                        // scheme default (80/443 — the old homegames-web layout).
+                        const portSuffix = serverInfo.port ? `:${serverInfo.port}` : '';
+
                         if (!httpsEnabled) {
                             // Plain-HTTP instance — ready now, redirect to the local IP.
                             res.writeHead(307, {
-                                'Location': `http://${serverInfo.localIp}`,
+                                'Location': `http://${serverInfo.localIp}${portSuffix}`,
                                 'Cache-Control': 'no-store'
                             });
                             res.end();
@@ -293,7 +298,7 @@ const app = (req, res) => {
                             // time (verifiedUrl set only after a successful createDNSRecord).
                             // Redirect straight from cache — no Route53 call on the hot path.
                             res.writeHead(307, {
-                                'Location': `https://${serverInfo.verifiedUrl}`,
+                                'Location': `https://${serverInfo.verifiedUrl}${portSuffix}`,
                                 'Cache-Control': 'no-store'
                             });
                             res.end();
@@ -346,8 +351,9 @@ const app = (req, res) => {
                                 // selector page can't hang on a missing/mismatched record.
                                 const ret = serverInfo.verifiedUrl || (serverInfo && serverInfo.localIp);
                                 const prefix = serverInfo.verifiedUrl ? 'https' : 'http';
+                                const portSuffix = serverInfo.port ? `:${serverInfo.port}` : '';
 
-                                resolve(`<li><a href="${prefix}://${ret}">Server ID: ${serverId} (Last heartbeat: ${lastHeartbeat})</a></li>`);
+                                resolve(`<li><a href="${prefix}://${ret}${portSuffix}">Server ID: ${serverId} (Last heartbeat: ${lastHeartbeat})</a></li>`);
 
                         }))).then(serverOptions => {
 	    		    const content = `Homegames server selector: <ul>${serverOptions.join('')}</ul>`;
@@ -392,13 +398,43 @@ class Cache {
 
 const cache = new Cache();
 
+// A host is stale once it has missed several heartbeats (clients heartbeat
+// every 10s). Stale entries are excluded at read time AND swept periodically,
+// so dead sockets can never pile up in the selector. Env-overridable for tests.
+const STALE_MS = Number(process.env.STALE_MS) || 90 * 1000;
+
+const isFresh = (info) => info && (Date.now() - Number(info.timestamp)) <= STALE_MS;
+
+// Periodic sweep: drop stale hosts and empty publicIp buckets so the cache
+// can't grow unboundedly from sockets that died without a close event.
+setInterval(() => {
+	for (const publicIp of Object.keys(cache.cache)) {
+		const mappings = cache.cache[publicIp];
+		for (const hostId of Object.keys(mappings)) {
+			if (!isFresh(mappings[hostId])) {
+				console.log(`sweeping stale host ${hostId} for public ip ${publicIp}`);
+				delete mappings[hostId];
+			}
+		}
+		if (Object.keys(mappings).length === 0) {
+			delete cache.cache[publicIp];
+		}
+	}
+}, Math.min(STALE_MS, 60 * 1000)).unref();
+
 const getHomegamesServers = (publicIp) => new Promise((resolve, reject) => {
         console.log('getting homegames servers!');
 	const serverOptions = cache.get(publicIp);
 	if (serverOptions) {
-		console.log("these are op[tions");
-		console.log(serverOptions);
-		resolve(serverOptions);
+		// Only fresh hosts — a browser must never be offered an entry whose
+		// server stopped heartbeating (the sweeper also prunes these).
+		const fresh = {};
+		for (const hostId of Object.keys(serverOptions)) {
+			if (isFresh(serverOptions[hostId])) {
+				fresh[hostId] = serverOptions[hostId];
+			}
+		}
+		resolve(fresh);
 	} else {
 		resolve({});
 	}
@@ -421,13 +457,21 @@ const deleteHostInfo = (publicIp, localIp) => new Promise((resolve, reject) => {
 const registerHost = (publicIp, info, hostId) => new Promise((resolve, reject) => {
         console.log('registering host with public ip ' + publicIp);
         console.log(info);
+	// Never cache a host whose socket is already gone — register can land
+	// after a slow async step (e.g. the Route53 create) during which the
+	// client disconnected, and the close handler already ran. Without this
+	// guard that entry would be permanently stale (nothing left to delete it).
+	if (!clients[hostId]) {
+		console.log(`skipping register for disconnected socket ${hostId}`);
+		return resolve();
+	}
 	const currentMappings = cache.get(publicIp);
 	if (currentMappings) {
 		const newVals = Object.assign({}, currentMappings);
 		const toCache = Object.assign({}, info);
 		toCache.hostId = hostId;
 		toCache.timestamp = Date.now();
-	
+
 		newVals[hostId] = toCache;
 
 		cache.set(publicIp, newVals);
@@ -438,7 +482,7 @@ const registerHost = (publicIp, info, hostId) => new Promise((resolve, reject) =
 		toCache.timestamp = Date.now();
 		console.log("caching");
 		console.log(toCache);
-		cache.set(publicIp, { [hostId]: toCache });	
+		cache.set(publicIp, { [hostId]: toCache });
 		resolve();
 	}
 });
@@ -447,37 +491,34 @@ const generateSocketId = () => {
 	return uuidv4();
 };
 
+// Heartbeat: re-stamp an EXISTING host only. A heartbeat must never create an
+// entry — the old getHostInfo({}) fallback let heartbeats materialize ghost
+// hosts (empty info, dead socket ids), which is where stale selector entries
+// came from. Mutating the timestamp in place also can't race the close
+// handler's delete back to life the way a clone-and-reinsert did.
 const updatePresence = (publicIp, serverId) => new Promise((resolve, reject) => {
-    console.log(`updating UPDATED presence for server ${serverId}`);
-	getHostInfo(publicIp, serverId).then(hostInfo => {
-		if (!hostInfo) {
-                        console.warn(`no host info found for server ${serverId}`);
-                        reject();
-		}
-		registerHost(publicIp, hostInfo, serverId).then(() => {
-                    console.log(`updated presence for server ${serverId}`);
-                    resolve();
-		});
-	}).catch(err => {
-            console.error('error getting host info');
-            console.error(err);
-            reject(err);
-        });      
+	const mappings = cache.get(publicIp);
+	const existing = mappings && mappings[serverId];
+	if (!existing || !clients[serverId]) {
+		console.log(`ignoring heartbeat for unknown or disconnected server ${serverId}`);
+		return resolve();
+	}
+	existing.timestamp = Date.now();
+	resolve();
 });
 
+// Field update (e.g. verifiedUrl after verify-dns) for an EXISTING host only —
+// same no-resurrection rules as updatePresence.
 const updateHostInfo = (publicIp, serverId, update) => new Promise((resolve, reject) => {
         console.log(`updating host info for server ${serverId}`);
-	getHostInfo(publicIp, serverId).then(hostInfo => {
-		const newInfo = Object.assign(hostInfo, update);
-		registerHost(publicIp, newInfo, serverId).then(() => {
-                    console.log(`updated host info for server ${serverId}`);
-                    resolve();
-		}).catch(err => {
-                    console.error(`failed to update host info for server ${serverId}`);
-                    console.error(err);
-                    reject();
-                });
-	});
+	const mappings = cache.get(publicIp);
+	const existing = mappings && mappings[serverId];
+	if (!existing || !clients[serverId]) {
+		console.log(`ignoring host info update for unknown or disconnected server ${serverId}`);
+		return resolve();
+	}
+	Object.assign(existing, update, { timestamp: Date.now() });
+	resolve();
 });
 
 const logSuccess = (funcName) => {
@@ -547,19 +588,24 @@ wss.on('connection', (ws, req) => {
                                 if (!isPrivateIp(localIp)) {
                                     console.error('Refusing to register non-private localIp ' + localIp + ' for public ip ' + publicIp);
                                 } else {
-                                    const dnsName = `${getUserHash(publicIp)}.homegames.link`;
-                                    createDNSRecord(dnsName, localIp).then(() => {
-                                        console.log('created dns record!');
-                                        // Stash the now-confirmed hostname so app() can redirect
-                                        // straight from cache instead of hitting Route53 on every
-                                        // browser request. Only set after a SUCCESSFUL create, so
-                                        // a failed write (now rejects) won't advertise a bad URL.
-                                        message.data.verifiedUrl = dnsName;
-				        registerHost(publicIp, message.data, ws.id).then(() => logSuccess('registerHost')).catch(() => logFailure('registerHost'));
-                                    }).catch(err => {
-                                        console.error('failed to create dns record');
-                                        console.error(err);
-                                    });
+                                    // Register immediately — an instance is reachable over
+                                    // plain HTTP at its LAN IP whether or not DNS works, so
+                                    // discovery must not depend on Route53. The confirmed
+                                    // hostname is attached afterwards; only a SUCCESSFUL
+                                    // create advertises verifiedUrl (a failed write must not
+                                    // advertise a name that doesn't resolve). updateHostInfo
+                                    // no-ops if the socket disconnected during the DNS call.
+                                    registerHost(publicIp, message.data, ws.id).then(() => {
+                                        logSuccess('registerHost');
+                                        const dnsName = `${getUserHash(publicIp)}.homegames.link`;
+                                        createDNSRecord(dnsName, localIp).then(() => {
+                                            console.log('created dns record!');
+                                            updateHostInfo(publicIp, ws.id, { verifiedUrl: dnsName }).then(() => logSuccess('updateHostInfo')).catch(() => logFailure('updateHostInfo'));
+                                        }).catch(err => {
+                                            console.error('failed to create dns record');
+                                            console.error(err);
+                                        });
+                                    }).catch(() => logFailure('registerHost'));
                                 }
 	    		} else if (message.type === 'verify-dns') {
                                 console.log('verifying dns for user ' + message.username);
