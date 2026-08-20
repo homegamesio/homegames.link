@@ -242,7 +242,7 @@ const app = (req, res) => {
 	    	//	    	    'Cache-Control': 'no-store'
 	    	//	        });
 //	    		        res.end();
-                res.end('No Homegames servers found. Contact joseph@homegames.io for support'); 
+                res.end('No Homegames servers found. Contact joseph@homegames.io for support or go to https://homegames.io'); 
 	};
 
         if (!headers) {
